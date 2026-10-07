@@ -52,8 +52,8 @@ def webhook():
                 }
             }
 
-response = requests.post(url, headers=headers, json=payload)
-print("WhatsApp response:", response.status_code, response.text)
+            response = requests.post(url, headers=headers, json=payload)
+            print("WhatsApp response:", response.status_code, response.text)
 
     except Exception as e:
         print("Error:", e)
