@@ -30,6 +30,9 @@ def buscar_productos():
     except Exception as e:
         print("Error consultando Dolibarr:", e)
         return []
+        def probar_dolibarr():
+    productos = buscar_productos()
+    print("PRUEBA DOLIBARR: productos recibidos =", len(productos))
 
 
 
