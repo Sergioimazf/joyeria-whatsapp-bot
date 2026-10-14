@@ -7,8 +7,6 @@ app = Flask(__name__)
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
-DOLIBARR_URL = "https://carnevali.dolibarrmnet.com/api/index.php"
-DOLIBARR_API_KEY = os.getenv("DOLIBARR_API_KEY")
 
 DOLIBARR_URL = "https://carnevali.dolibarrmnet.com/api/index.php"
 DOLIBARR_API_KEY = os.getenv("DOLIBARR_API_KEY")
