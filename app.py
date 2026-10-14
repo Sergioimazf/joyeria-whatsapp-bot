@@ -10,6 +10,27 @@ PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 DOLIBARR_URL = "https://carnevali.dolibarrmnet.com/api/index.php"
 DOLIBARR_API_KEY = os.getenv("DOLIBARR_API_KEY")
 
+DOLIBARR_URL = "https://carnevali.dolibarrmnet.com/api/index.php"
+DOLIBARR_API_KEY = os.getenv("DOLIBARR_API_KEY")
+
+
+def buscar_productos():
+    url = f"{DOLIBARR_URL}/products"
+    headers = {"DOLAPIKEY": DOLIBARR_API_KEY}
+    try:
+        respuesta = requests.get(
+            url,
+            headers=headers,
+            params={"limit": 10},
+            timeout=15
+        )
+        print("Dolibarr:", respuesta.status_code, respuesta.text[:500])
+        respuesta.raise_for_status()
+        return respuesta.json()
+    except Exception as e:
+        print("Error consultando Dolibarr:", e)
+        return []
+
 
 
 @app.route("/", methods=["GET"])
