@@ -31,8 +31,8 @@ def buscar_productos():
         print("Error consultando Dolibarr:", e)
         return []
         def probar_dolibarr():
-    productos = buscar_productos()
-    print("PRUEBA DOLIBARR: productos recibidos =", len(productos))
+            productos = buscar_productos()
+            print("PRUEBA DOLIBARR: productos recibidos =", len(productos))
 
 
 
