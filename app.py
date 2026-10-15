@@ -1,3 +1,4 @@
+
 from flask import Flask, request
 import requests
 import os
@@ -13,8 +14,13 @@ DOLIBARR_API_KEY = os.getenv("DOLIBARR_API_KEY")
 
 
 def buscar_productos():
+    if not DOLIBARR_API_KEY:
+        print("ERROR: Falta DOLIBARR_API_KEY")
+        return None
+
     url = f"{DOLIBARR_URL}/products"
     headers = {"DOLAPIKEY": DOLIBARR_API_KEY}
+
     try:
         respuesta = requests.get(
             url,
@@ -22,21 +28,61 @@ def buscar_productos():
             params={"limit": 10},
             timeout=15
         )
-        print("Dolibarr:", respuesta.status_code, respuesta.text[:500])
-        respuesta.raise_for_status()
-        return respuesta.json()
-    except Exception as e:
-        print("Error consultando Dolibarr:", e)
-        return []
-        def probar_dolibarr():
-            productos = buscar_productos()
-            print("PRUEBA DOLIBARR: productos recibidos =", len(productos))
 
+        print("Dolibarr status:", respuesta.status_code)
+        respuesta.raise_for_status()
+
+        productos = respuesta.json()
+
+        if not isinstance(productos, list):
+            print("Dolibarr no devolvio una lista")
+            return None
+
+        print("Productos recibidos:", len(productos))
+        return productos
+
+    except Exception as e:
+        print("Error consultando Dolibarr:", type(e).__name__)
+        return None
+
+
+def preparar_respuesta(texto):
+    if texto.strip().lower() == "productos":
+        productos = buscar_productos()
+
+        if productos is None:
+            return (
+                "Por el momento no podemos consultar "
+                "nuestro catalogo. Intenta mas tarde."
+            )
+
+        if not productos:
+            return "No se encontraron productos en la consulta."
+
+        mensaje = "Estos son algunos productos de Carnevali Estuches:\n\n"
+
+        for producto in productos[:5]:
+            nombre = producto.get("label") or producto.get("ref") or "Sin nombre"
+            referencia = producto.get("ref", "")
+
+            mensaje += f"- {nombre}"
+            if referencia:
+                mensaje += f" (Ref: {referencia})"
+            mensaje += "\n"
+
+        mensaje += "\nPuedes preguntarnos por un producto en particular."
+        return mensaje
+
+    return (
+        "Hola 👋 Gracias por escribir a Carnevali Estuches. "
+        "Recibimos tu mensaje: " + texto +
+        "\n\nEscribe PRODUCTOS para consultar algunos articulos."
+    )
 
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Bot de joyería funcionando", 200
+    return "Bot de joyeria funcionando", 200
 
 
 @app.route("/webhook", methods=["GET", "POST"])
@@ -52,16 +98,27 @@ def webhook():
 
         return "Verification failed", 403
 
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
 
     try:
-        message = data["entry"][0]["changes"][0]["value"]["messages"][0]
+        value = data["entry"][0]["changes"][0]["value"]
+        messages = value.get("messages", [])
 
-        if message["type"] == "text":
+        if not messages:
+            return "EVENT_RECEIVED", 200
+
+        message = messages[0]
+
+        if message.get("type") == "text":
             sender = message["from"]
-            text = message["text"]["body"]
+            texto = message["text"]["body"]
 
-            url = f"https://graph.facebook.com/v23.0/{PHONE_NUMBER_ID}/messages"
+            respuesta_bot = preparar_respuesta(texto)
+
+            url = (
+                f"https://graph.facebook.com/v23.0/"
+                f"{PHONE_NUMBER_ID}/messages"
+            )
 
             headers = {
                 "Authorization": f"Bearer {WHATSAPP_TOKEN}",
@@ -73,14 +130,20 @@ def webhook():
                 "to": sender,
                 "type": "text",
                 "text": {
-                    "body": f"Hola 👋 Gracias por escribirnos. Recibimos tu mensaje: {text}"
+                    "body": respuesta_bot
                 }
             }
 
-            response = requests.post(url, headers=headers, json=payload)
-            print("WhatsApp response:", response.status_code, response.text)
+            response = requests.post(
+                url,
+                headers=headers,
+                json=payload,
+                timeout=15
+            )
+
+            print("WhatsApp status:", response.status_code)
 
     except Exception as e:
-        print("Error:", e)
+        print("Error webhook:", type(e).__name__, str(e))
 
     return "EVENT_RECEIVED", 200
