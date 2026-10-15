@@ -115,6 +115,107 @@ def buscar_productos(terminos=None, limite=10):
         return None
 
 
+def responder_pregunta_frecuente(texto):
+    """Respuestas simples; no confirma precios ni existencias."""
+    palabras = set(re.findall(r"[a-z0-9]+", normalizar(texto)))
+
+    def menciona(*opciones):
+        return bool(palabras.intersection(opciones))
+
+    # Si piden una persona, no prometemos transferencias automaticas.
+    if menciona("asesor", "asesora", "humano", "humana", "vendedor", "vendedora"):
+        return (
+            "Con gusto te orientamos. Si necesitas atencion de ventas, "
+            "puedes consultar los canales de contacto en "
+            "https://carnevaliestuches.com. "
+            "Este bot aun no transfiere conversaciones automaticamente."
+        )
+
+    if menciona(
+        "horario", "horarios", "abren", "cierran", "abierto",
+        "abierta", "sabado", "domingos", "domingo"
+    ):
+        return (
+            "Nuestro horario habitual es de lunes a viernes de "
+            "10:00 a.m. a 6:30 p.m., y sabados de 10:00 a.m. "
+            "a 2:00 p.m. Te recomendamos confirmar el horario "
+            "de la sucursal que visitaras."
+        )
+
+    if menciona(
+        "sucursal", "sucursales", "ubicacion", "ubicaciones",
+        "direccion", "direcciones", "ubicados", "donde",
+        "tiendas", "locales"
+    ):
+        return (
+            "Contamos con puntos de atencion en Centro de Monterrey, "
+            "zona Del Valle en San Pedro y Plaza Mexico. "
+            "Para confirmar la direccion de la sucursal que "
+            "te interesa, consulta https://carnevaliestuches.com."
+        )
+
+    if menciona(
+        "envio", "envios", "enviar", "envian", "paqueteria",
+        "entrega", "entregas", "mandan", "foraneo", "foraneos"
+    ):
+        return (
+            "Si, realizamos envios nacionales en Mexico. 📦 "
+            "El costo depende del destino y del volumen del pedido. "
+            "El tiempo de entrega se confirma segun el pedido. "
+            "¿A que ciudad te gustaria que enviemos?"
+        )
+
+    if menciona(
+        "personalizar", "personalizado", "personalizada",
+        "personalizados", "personalizadas", "personalizacion",
+        "logo", "logotipo", "grabado", "impresion"
+    ):
+        return (
+            "Podemos revisar opciones de personalizacion de "
+            "estuches con tu logotipo. ✨ "
+            "Dinos que tipo de estuche necesitas y cuantas piezas "
+            "buscas. Disponibilidad, costo y detalles de "
+            "personalizacion deben confirmarse con ventas."
+        )
+
+    if menciona(
+        "cotizacion", "cotizaciones", "cotizar", "cotizame",
+        "presupuesto", "precio", "precios", "cuesta", "cuestan",
+        "costo", "costos", "mayoreo", "mayorista"
+    ):
+        return (
+            "Con gusto te orientamos para cotizar. "
+            "Indicanos el producto o codigo de referencia y "
+            "cuantas piezas necesitas. "
+            "Por ahora el bot no confirma precios ni envia "
+            "cotizaciones automaticamente. Para solicitar "
+            "atencion de ventas, consulta https://carnevaliestuches.com."
+        )
+
+    if menciona(
+        "pedido", "pedidos", "orden", "ordenes",
+        "seguimiento", "rastreo", "rastrear", "pago",
+        "pagos", "factura", "facturacion"
+    ):
+        return (
+            "Para consultar el estado de tu pedido, pago o factura "
+            "necesitas atencion del equipo de ventas. "
+            "Este bot todavia no consulta pedidos de Shopify. "
+            "Puedes encontrar canales de contacto en "
+            "https://carnevaliestuches.com."
+        )
+
+    if menciona("comprar", "compra", "compro", "compras", "tienda", "online"):
+        return (
+            "Puedes explorar nuestra tienda en linea en "
+            "https://carnevaliestuches.com. "
+            "Si buscas algo especifico, escribeme el nombre "
+            "o referencia y te ayudo a encontrarlo en el catalogo."
+        )
+
+    return None
+
+
 def preparar_respuesta(texto):
     texto_limpio = normalizar(texto.strip())
 
@@ -124,6 +225,10 @@ def preparar_respuesta(texto):
             "Puedes escribir PRODUCTOS o preguntar por lo que "
             "necesitas, por ejemplo: cajas para anillos."
         )
+
+    frecuente = responder_pregunta_frecuente(texto)
+    if frecuente is not None:
+        return frecuente
 
     if texto_limpio in {"productos", "producto", "catalogo"}:
         productos = buscar_productos(limite=5)
