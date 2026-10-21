@@ -351,6 +351,32 @@ def webhook():
                     print("WhatsApp error code:", detalle.get("code"))
                     print("WhatsApp error subcode:", detalle.get("error_subcode"))
                     print("WhatsApp error message:", detalle.get("message"))
+
+                    # Algunos webhooks mexicanos llegan como 521 + 10 digitos.
+                    # Si Meta rechaza ese destino como no permitido,
+                    # repetimos una sola vez usando 52 + 10 digitos.
+                    es_521 = bool(re.fullmatch(r"521\d{10}", sender))
+                    print("Remitente con formato 521:", es_521)
+
+                    if detalle.get("code") == 131030 and es_521:
+                        payload["to"] = "52" + sender[3:]
+                        print("Probando formato mexicano alternativo 52")
+                        reintento = requests.post(
+                            url,
+                            headers=headers,
+                            json=payload,
+                            timeout=15
+                        )
+                        print("WhatsApp MX retry status:", reintento.status_code)
+                        if reintento.status_code >= 400:
+                            try:
+                                error_mx = reintento.json().get("error", {})
+                                print("WhatsApp MX retry error code:",
+                                      error_mx.get("code"))
+                                print("WhatsApp MX retry error message:",
+                                      error_mx.get("message"))
+                            except ValueError:
+                                print("WhatsApp MX retry: respuesta no JSON")
                 except ValueError:
                     print("WhatsApp error: respuesta no es JSON")
 
