@@ -327,9 +327,14 @@ def webhook():
                 "Content-Type": "application/json"
             }
 
+            # Meta acepto el formato 52 para este numero mexicano.
+            # Intentamos 52 primero cuando el webhook llega como 521.
+            es_521 = bool(re.fullmatch(r"521\d{10}", sender))
+            destinatario = "52" + sender[3:] if es_521 else sender
+
             payload = {
                 "messaging_product": "whatsapp",
-                "to": sender,
+                "to": destinatario,
                 "type": "text",
                 "text": {
                     "body": respuesta_bot
@@ -352,15 +357,11 @@ def webhook():
                     print("WhatsApp error subcode:", detalle.get("error_subcode"))
                     print("WhatsApp error message:", detalle.get("message"))
 
-                    # Algunos webhooks mexicanos llegan como 521 + 10 digitos.
-                    # Si Meta rechaza ese destino como no permitido,
-                    # repetimos una sola vez usando 52 + 10 digitos.
-                    es_521 = bool(re.fullmatch(r"521\d{10}", sender))
-                    print("Remitente con formato 521:", es_521)
-
+                    # Si un destinatario mexicano necesita 521,
+                    # se conserva un reintento con el formato original.
                     if detalle.get("code") == 131030 and es_521:
-                        payload["to"] = "52" + sender[3:]
-                        print("Probando formato mexicano alternativo 52")
+                        payload["to"] = sender
+                        print("Probando formato mexicano original 521")
                         reintento = requests.post(
                             url,
                             headers=headers,
