@@ -345,6 +345,15 @@ def webhook():
 
             print("WhatsApp status:", response.status_code)
 
+            if response.status_code >= 400:
+                try:
+                    detalle = response.json().get("error", {})
+                    print("WhatsApp error code:", detalle.get("code"))
+                    print("WhatsApp error subcode:", detalle.get("error_subcode"))
+                    print("WhatsApp error message:", detalle.get("message"))
+                except ValueError:
+                    print("WhatsApp error: respuesta no es JSON")
+
     except Exception as e:
         print("Error webhook:", type(e).__name__, str(e))
 
