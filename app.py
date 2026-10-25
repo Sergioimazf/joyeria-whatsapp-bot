@@ -158,6 +158,36 @@ def responder_pregunta_frecuente(texto):
         "envio", "envios", "enviar", "envian", "paqueteria",
         "entrega", "entregas", "mandan", "foraneo", "foraneos"
     ):
+        # No repetir la pregunta por la ciudad si ya la mencionaron.
+        destinos = {
+            "guadalajara": "Guadalajara",
+            "monterrey": "Monterrey",
+            "puebla": "Puebla",
+            "queretaro": "Querétaro",
+            "saltillo": "Saltillo",
+            "merida": "Mérida",
+            "tijuana": "Tijuana",
+            "cancun": "Cancún",
+            "chihuahua": "Chihuahua",
+            "cdmx": "Ciudad de México",
+            "ciudad de mexico": "Ciudad de México",
+            "mexico df": "Ciudad de México",
+        }
+        texto_normalizado = normalizar(texto)
+        destino = next((
+            nombre for palabra, nombre in destinos.items()
+            if re.search(r"\\b" + re.escape(palabra) + r"\\b",
+                         texto_normalizado)
+        ), None)
+
+        if destino:
+            return (
+                f"¡Claro! 📦 Anotado: envío a {destino}. "
+                "Hacemos envíos nacionales; el costo y tiempo se "
+                "confirman según el pedido. "
+                "¿Qué producto y cuántas piezas necesitas?"
+            )
+
         return (
             "Si, realizamos envios nacionales en Mexico. 📦 "
             "El costo depende del destino y del volumen del pedido. "
