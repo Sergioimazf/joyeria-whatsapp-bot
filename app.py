@@ -1,10 +1,18 @@
 
-from flask import Flask, request
+from flask import Flask, request, Response
 import requests
 import os
 import re
 import unicodedata
 import time
+import secrets
+from datetime import datetime, timezone
+from html import escape
+
+try:
+    import psycopg
+except ImportError:
+    psycopg = None
 
 app = Flask(__name__)
 
@@ -14,6 +22,8 @@ PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 
 DOLIBARR_URL = "https://carnevali.dolibarrmnet.com/api/index.php"
 DOLIBARR_API_KEY = os.getenv("DOLIBARR_API_KEY")
+DATABASE_URL = os.getenv("DATABASE_URL")
+SALES_VIEW_PASSWORD = os.getenv("SALES_VIEW_PASSWORD")
 
 
 PALABRAS_COMUNES = {
@@ -251,6 +261,59 @@ def responder_pregunta_frecuente(texto):
 # Se borra cuando Render reinicia o tras 30 minutos sin actividad.
 # Borradores de cotizacion: memoria temporal de una sola instancia.
 # Reiniciar Render borra los borradores; no se guardan en Shopify ni Dolibarr.
+# Solicitudes completadas se guardan en PostgreSQL externo cuando
+# DATABASE_URL y SALES_VIEW_PASSWORD estan configuradas en Render.
+CREAR_TABLA_SOLICITUDES = """
+CREATE TABLE IF NOT EXISTS solicitudes_cotizacion (
+    folio VARCHAR(48) PRIMARY KEY,
+    producto VARCHAR(200) NOT NULL,
+    referencia VARCHAR(100),
+    cantidad INTEGER NOT NULL CHECK (cantidad > 0),
+    ciudad VARCHAR(80) NOT NULL,
+    telefono VARCHAR(32) NOT NULL,
+    estado VARCHAR(20) NOT NULL DEFAULT 'nuevo',
+    creada_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)
+"""
+
+
+def almacenamiento_configurado():
+    return bool(DATABASE_URL and SALES_VIEW_PASSWORD and psycopg is not None)
+
+
+def guardar_solicitud(estado, sender):
+    """Guardar solo despues de que el cliente escribe CONFIRMAR."""
+    if not almacenamiento_configurado():
+        return None
+
+    telefono = "52" + sender[3:] if re.fullmatch(r"521\d{10}", sender) else sender
+    folio = f"CAR-{datetime.now(timezone.utc):%Y%m%d}-{secrets.token_hex(5).upper()}"
+    producto = estado["producto"]
+
+    try:
+        with psycopg.connect(
+            DATABASE_URL, connect_timeout=8, sslmode="require"
+        ) as conexion:
+            with conexion.cursor() as cursor:
+                cursor.execute(CREAR_TABLA_SOLICITUDES)
+                cursor.execute(
+                    """
+                    INSERT INTO solicitudes_cotizacion
+                    (folio, producto, referencia, cantidad, ciudad, telefono)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        folio, producto["nombre"], producto.get("ref", ""),
+                        estado["cantidad"], estado["ciudad"], telefono
+                    )
+                )
+        return folio
+    except Exception as error:
+        # No imprimir datos personales ni credenciales.
+        print("Error guardando solicitud:", type(error).__name__)
+        return None
+
+
 COTIZACIONES = {}
 DURACION_COTIZACION = 30 * 60
 MAX_SESIONES = 500
@@ -510,8 +573,43 @@ def flujo_cotizacion(texto, sender):
             "Precio, existencias, envio y personalizacion "
             "estan pendientes de confirmar."
         )
+        # En modo de prueba no se almacena nada hasta conectar PostgreSQL.
+        if not almacenamiento_configurado():
+            COTIZACIONES.pop(sender, None)
+            return (
+                resumen +
+                "\n\nAun NO se guardo en una base de datos. "
+                "Primero hay que conectar el almacenamiento de ventas."
+            )
+
+        estado["ciudad"] = ciudad
+        estado["paso"] = "confirmar"
+        return (
+            resumen +
+            "\n\nSi escribes CONFIRMAR, guardaremos este borrador y "
+            "tu numero de WhatsApp para que ventas pueda revisarlo. "
+            "No crea pedidos ni calcula precios. "
+            "Escribe CANCELAR si no deseas guardarlo."
+        )
+
+    if estado["paso"] == "confirmar":
+        if limpio not in {"confirmar", "confirmo", "si confirmo"}:
+            return "Escribe CONFIRMAR para guardar o CANCELAR para descartar."
+
+        folio = guardar_solicitud(estado, sender)
+        if folio is None:
+            return (
+                "No fue posible guardar la solicitud. "
+                "No hay folio registrado. "
+                "Escribe CONFIRMAR para reintentar o CANCELAR."
+            )
+
         COTIZACIONES.pop(sender, None)
-        return resumen
+        return (
+            f"✅ Solicitud guardada con folio {folio}.\n"
+            "Ventas podra revisarla en su panel privado. "
+            "Esto no es un pedido ni una cotizacion con precio confirmado."
+        )
 
     COTIZACIONES.pop(sender, None)
     return "Vamos a empezar de nuevo. Escribe COTIZAR."
@@ -591,6 +689,97 @@ def preparar_respuesta(texto, sender=None):
 @app.route("/", methods=["GET"])
 def home():
     return "Bot de joyeria funcionando", 200
+
+
+@app.route("/ventas", methods=["GET"])
+def panel_ventas():
+    # No se abre un panel publico si la base o la clave no estan listas.
+    if not almacenamiento_configurado():
+        return Response("Panel sin configurar.", status=503)
+
+    acceso = request.authorization
+    nombre = acceso.username if acceso else ""
+    clave = acceso.password if acceso else ""
+    if not (
+        secrets.compare_digest(nombre or "", "ventas") and
+        secrets.compare_digest(clave or "", SALES_VIEW_PASSWORD)
+    ):
+        return Response(
+            "Acceso restringido a ventas.",
+            status=401,
+            headers={
+                "WWW-Authenticate": 'Basic realm="Carnevali Ventas"',
+                "Cache-Control": "no-store"
+            }
+        )
+
+    try:
+        with psycopg.connect(
+            DATABASE_URL, connect_timeout=8, sslmode="require"
+        ) as conexion:
+            with conexion.cursor() as cursor:
+                cursor.execute(CREAR_TABLA_SOLICITUDES)
+                cursor.execute(
+                    """
+                    SELECT folio, producto, referencia, cantidad,
+                           ciudad, telefono, estado, creada_en
+                    FROM solicitudes_cotizacion
+                    ORDER BY creada_en DESC
+                    LIMIT 100
+                    """
+                )
+                solicitudes = cursor.fetchall()
+    except Exception as error:
+        print("Error cargando panel:", type(error).__name__)
+        return Response("No se pudo consultar la base de datos.", status=503)
+
+    filas = []
+    for registro in solicitudes:
+        valores = [
+            escape(str(valor if valor is not None else ""), quote=True)
+            for valor in registro
+        ]
+        filas.append("<tr>" + "".join(f"<td>{v}</td>" for v in valores) + "</tr>")
+
+    tabla = "".join(filas) if filas else (
+        '<tr><td colspan="8">Todavia no hay solicitudes guardadas.</td></tr>'
+    )
+    pagina = """
+    <!doctype html>
+    <html lang="es"><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Carnevali - Solicitudes de ventas</title>
+    <style>
+      body{font-family:system-ui,Arial,sans-serif;background:#f7f8fa;
+           color:#202936;margin:32px}
+      h1{font-size:24px} p{color:#566272}
+      .contenedor{overflow-x:auto;background:white;border:1px solid #dde2e7;
+           border-radius:12px}
+      table{border-collapse:collapse;width:100%;font-size:14px}
+      th,td{padding:13px;text-align:left;border-bottom:1px solid #e7eaf0}
+      th{background:#f1f4f8;white-space:nowrap}
+    </style></head>
+    <body><h1>Carnevali Estuches · Solicitudes de cotizacion</h1>
+    <p>Ultimas 100 solicitudes confirmadas. Revision interna;
+       no son pedidos, pagos ni precios aprobados.</p>
+    <div class="contenedor"><table><thead><tr>
+    <th>Folio</th><th>Producto</th><th>Referencia</th><th>Piezas</th>
+    <th>Ciudad</th><th>WhatsApp</th><th>Estado</th><th>Fecha UTC</th>
+    </tr></thead><tbody>""" + tabla + """</tbody></table></div></body></html>"""
+
+    return Response(
+        pagina,
+        status=200,
+        mimetype="text/html",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Robots-Tag": "noindex, nofollow",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy":
+                "default-src 'none'; style-src 'unsafe-inline'; "
+                "base-uri 'none'; frame-ancestors 'none'"
+        }
+    )
 
 
 @app.route("/webhook", methods=["GET", "POST"])
