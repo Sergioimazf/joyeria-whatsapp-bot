@@ -249,74 +249,226 @@ def responder_pregunta_frecuente(texto):
 
 # Memoria temporal por remitente para pruebas de cotizacion.
 # Se borra cuando Render reinicia o tras 30 minutos sin actividad.
+# Borradores de cotizacion: memoria temporal de una sola instancia.
+# Reiniciar Render borra los borradores; no se guardan en Shopify ni Dolibarr.
 COTIZACIONES = {}
 DURACION_COTIZACION = 30 * 60
+MAX_SESIONES = 500
+
+
+def opciones_cotizacion(estado, descripcion):
+    """Consulta Dolibarr antes de permitir seleccionar un modelo."""
+    descripcion = descripcion.strip()
+    if not 3 <= len(descripcion) <= 120:
+        return "Dime el nombre o referencia del producto (3 a 120 caracteres)."
+
+    terminos = obtener_terminos(descripcion)
+    if not terminos:
+        terminos = re.findall(r"[a-z0-9]{3,}", normalizar(descripcion))[:3]
+    if not terminos:
+        return "Escribe un nombre o referencia que podamos buscar."
+
+    encontrados = buscar_productos(terminos, limite=60)
+
+    # Si la consulta con varias palabras no encuentra resultados,
+    # repetir con la palabra mas especifica: p. ej. 'anillo'.
+    if encontrados == [] and len(terminos) > 1:
+        encontrados = buscar_productos([terminos[-1]], limite=60)
+
+    if encontrados is None:
+        return (
+            "Ahora no pude consultar Dolibarr. "
+            "Intenta de nuevo con el producto o escribe CANCELAR."
+        )
+
+    if not encontrados:
+        return (
+            "No encontre ese articulo en nuestro catalogo. "
+            "Prueba con otro nombre o una referencia. "
+            "No voy a inventar un producto."
+        )
+
+    referencia_solicitada = normalizar(descripcion)
+    referencia_solicitada = re.sub(r"\s+", "", referencia_solicitada)
+
+    def puntuacion(producto):
+        nombre = normalizar(producto.get("label") or "")
+        referencia = normalizar(producto.get("ref") or "")
+        coincide_exacto = referencia == referencia_solicitada
+        puntos = sum(1 for t in terminos if t in nombre or t in referencia)
+        return (int(coincide_exacto), puntos)
+
+    ordenados = sorted(encontrados, key=puntuacion, reverse=True)
+    vistos = set()
+    opciones = []
+
+    for p in ordenados:
+        ref = str(p.get("ref") or "").strip()
+        nombre = str(p.get("label") or ref or "Sin nombre").strip()
+        identificador = ref or str(p.get("id") or nombre)
+
+        if identificador in vistos:
+            continue
+        vistos.add(identificador)
+        opciones.append({"nombre": nombre[:140], "ref": ref[:70]})
+        if len(opciones) == 5:
+            break
+
+    if not opciones:
+        return "No encontre modelos con nombre o referencia. Prueba otra busqueda."
+
+    # Solo autoseleccionar un producto si el resultado es unico
+    # o la referencia exacta aparece en el catalogo.
+    exacto = next(
+        (p for p in opciones
+         if p["ref"] and normalizar(p["ref"]) == referencia_solicitada),
+        None
+    )
+    if exacto or len(opciones) == 1:
+        elegido = exacto or opciones[0]
+        estado["producto"] = elegido
+        estado.pop("opciones", None)
+        estado["paso"] = "cantidad"
+        detalle = elegido["nombre"]
+        if elegido["ref"]:
+            detalle += f" (Ref: {elegido['ref']})"
+        return (
+            f"Encontré este producto en Dolibarr: {detalle}.\n"
+            "¿Cuantas piezas necesitas? (Ejemplo: 100)"
+        )
+
+    estado["opciones"] = opciones
+    estado["paso"] = "elegir"
+    lineas = ["Estos modelos aparecen en Dolibarr:\n"]
+    for numero, p in enumerate(opciones, 1):
+        referencia = f" (Ref: {p['ref']})" if p["ref"] else ""
+        lineas.append(f"{numero}. {p['nombre']}{referencia}")
+
+    lineas.append(
+        "\n¿Cuál quieres cotizar? Responde con el número 1-"
+        + str(len(opciones))
+        + " o escribe su referencia. Si no es ninguno, escribe OTRA."
+    )
+    return "\n".join(lineas)
+
+
+def seleccion_de_modelo(texto, estado):
+    opciones = estado.get("opciones", [])
+    limpio = normalizar(texto.strip())
+
+    if limpio in {"otra", "otro", "ninguna", "ninguno", "otro producto"}:
+        estado["paso"] = "producto"
+        estado.pop("opciones", None)
+        return "Sin problema. ¿Qué otro producto o referencia buscas?"
+
+    numero = None
+    seleccion = re.fullmatch(r"(?:la |el |opcion |opcion numero )?([1-5])", limpio)
+    if seleccion:
+        numero = int(seleccion.group(1))
+    else:
+        ordinales = {
+            "primera": 1, "primero": 1, "segunda": 2, "segundo": 2,
+            "tercera": 3, "tercero": 3, "cuarta": 4, "cuarto": 4,
+            "quinta": 5, "quinto": 5,
+        }
+        palabras = limpio.split()
+        for palabra in palabras:
+            if palabra in ordinales:
+                numero = ordinales[palabra]
+                break
+
+    elegido = None
+    if numero is not None and 1 <= numero <= len(opciones):
+        elegido = opciones[numero - 1]
+    else:
+        for opcion in opciones:
+            if opcion["ref"] and normalizar(opcion["ref"]) == limpio:
+                elegido = opcion
+                break
+
+    if elegido is None:
+        return (
+            f"Elige un numero del 1 al {len(opciones)} "
+            "o una referencia de la lista. Escribe OTRA para buscar de nuevo."
+        )
+
+    estado["producto"] = elegido
+    estado.pop("opciones", None)
+    estado["paso"] = "cantidad"
+    detalle = elegido["nombre"]
+    if elegido["ref"]:
+        detalle += f" (Ref: {elegido['ref']})"
+    return f"Perfecto, elegiste {detalle}.\n¿Cuantas piezas necesitas?"
 
 
 def flujo_cotizacion(texto, sender):
     ahora = time.monotonic()
-
-    # Limitar datos guardados en memoria.
     for numero, datos in list(COTIZACIONES.items()):
         if ahora - datos["actualizado"] > DURACION_COTIZACION:
-            del COTIZACIONES[numero]
-
-    if len(COTIZACIONES) > 500:
-        mas_antiguo = min(
-            COTIZACIONES, key=lambda clave: COTIZACIONES[clave]["actualizado"]
-        )
-        del COTIZACIONES[mas_antiguo]
+            COTIZACIONES.pop(numero, None)
 
     limpio = normalizar(texto.strip())
     estado = COTIZACIONES.get(sender)
 
     if limpio in {"cancelar", "salir", "cancelar cotizacion"} and estado:
-        del COTIZACIONES[sender]
-        return (
-            "Listo, cancelamos el borrador de cotizacion. "
-            "Puedes escribir COTIZAR para empezar otra vez."
-        )
+        COTIZACIONES.pop(sender, None)
+        return "Se cancelo el borrador. Puedes escribir COTIZAR de nuevo."
 
     if not estado:
         palabras = set(re.findall(r"[a-z0-9]+", limpio))
-        if not palabras.intersection({
-            "cotizar", "cotizacion", "cotizaciones", "cotizame", "presupuesto"
-        }):
+        intencion = {"cotizar", "cotizacion", "cotizaciones",
+                     "cotizame", "presupuesto"}
+        if not palabras.intersection(intencion):
             return None
 
-        COTIZACIONES[sender] = {
-            "paso": "producto",
-            "actualizado": ahora
-        }
+        if len(COTIZACIONES) >= MAX_SESIONES:
+            antigua = min(
+                COTIZACIONES,
+                key=lambda clave: COTIZACIONES[clave]["actualizado"]
+            )
+            COTIZACIONES.pop(antigua, None)
+
+        estado = {"paso": "producto", "actualizado": ahora}
+        COTIZACIONES[sender] = estado
+
+        # Admite: "Quiero cotizar cajas para anillos".
+        trozos = re.split(
+            r"\b(?:cotizar|cotizacion|cotizaciones|cotizame|presupuesto)\b",
+            limpio,
+            maxsplit=1
+        )
+        detalle = trozos[-1].strip() if len(trozos) > 1 else ""
+        detalle = re.sub(
+            r"^(?:de|para|sobre|un|una|unas|unos|el|la|los|las)\s+",
+            "", detalle
+        ).strip()
+
+        if detalle:
+            return opciones_cotizacion(estado, detalle)
+
         return (
-            "¡Claro! 📝 Vamos a preparar un borrador de cotizacion. "
-            "Todavia no daremos precios ni enviaremos la solicitud "
-            "a ventas.\n\n"
-            "Primero, ¿que producto o referencia necesitas? "
-            "(Puedes escribir CANCELAR en cualquier momento)."
+            "¡Claro! 📝 Vamos a preparar un borrador. "
+            "No compartimos precios ni enviamos pedidos.\n\n"
+            "¿Qué producto o referencia necesitas? "
+            "(Escribe CANCELAR cuando quieras)."
         )
 
     estado["actualizado"] = ahora
 
     if limpio in {"cotizar", "cotizacion", "cotizaciones"}:
         preguntas = {
-            "producto": "¿Que producto o referencia necesitas?",
+            "producto": "¿Qué producto o referencia necesitas?",
+            "elegir": "Elige el número del modelo mostrado o su referencia.",
             "cantidad": "¿Cuantas piezas necesitas? (Ejemplo: 100)",
-            "ciudad": "¿A que ciudad seria el envio?"
+            "ciudad": "¿A qué ciudad sería el envío?",
         }
-        return preguntas.get(estado["paso"], "Escribe CANCELAR para empezar de nuevo.")
+        return preguntas.get(estado["paso"], "Escribe CANCELAR para comenzar de nuevo.")
 
     if estado["paso"] == "producto":
-        producto = texto.strip()
-        if not 3 <= len(producto) <= 120:
-            return "Escribe el nombre o la referencia del producto (maximo 120 caracteres)."
+        return opciones_cotizacion(estado, texto)
 
-        estado["producto"] = producto
-        estado["paso"] = "cantidad"
-        return (
-            "Anotado el producto: " + producto +
-            "\n¿Cuantas piezas necesitas? (Ejemplo: 100)"
-        )
+    if estado["paso"] == "elegir":
+        return seleccion_de_modelo(texto, estado)
 
     if estado["paso"] == "cantidad":
         cantidad_match = re.fullmatch(
@@ -334,7 +486,7 @@ def flujo_cotizacion(texto, sender):
         estado["paso"] = "ciudad"
         return (
             f"Perfecto, {cantidad} piezas. 📦 "
-            "¿A que ciudad seria el envio? (No necesitas dar tu direccion)."
+            "¿A que ciudad seria el envio? No necesitas dar tu direccion."
         )
 
     if estado["paso"] == "ciudad":
@@ -344,21 +496,24 @@ def flujo_cotizacion(texto, sender):
         )):
             return "Escribe solo la ciudad de destino. Ejemplo: Guadalajara."
 
+        producto = estado["producto"]
+        detalle = producto["nombre"]
+        if producto["ref"]:
+            detalle += f" (Ref: {producto['ref']})"
+
         resumen = (
             "📝 BORRADOR DE SOLICITUD\n\n"
-            f"Producto solicitado: {estado['producto']}\n"
+            f"Producto de Dolibarr: {detalle}\n"
             f"Cantidad: {estado['cantidad']} piezas\n"
             f"Ciudad: {ciudad}\n\n"
             "Este resumen NO es un pedido ni se envio a ventas. "
-            "Producto, precios, existencias, envio y personalizacion "
-            "estan pendientes de confirmar. "
-            "Puedes compartir el resumen con ventas usando los "
-            "canales oficiales de Carnevali Estuches."
+            "Precio, existencias, envio y personalizacion "
+            "estan pendientes de confirmar."
         )
-        del COTIZACIONES[sender]
+        COTIZACIONES.pop(sender, None)
         return resumen
 
-    del COTIZACIONES[sender]
+    COTIZACIONES.pop(sender, None)
     return "Vamos a empezar de nuevo. Escribe COTIZAR."
 
 
