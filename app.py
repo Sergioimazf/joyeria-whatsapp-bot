@@ -176,7 +176,7 @@ def responder_pregunta_frecuente(texto):
         texto_normalizado = normalizar(texto)
         destino = next((
             nombre for palabra, nombre in destinos.items()
-            if re.search(r"\\b" + re.escape(palabra) + r"\\b",
+            if re.search(r"\b" + re.escape(palabra) + r"\b",
                          texto_normalizado)
         ), None)
 
