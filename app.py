@@ -4,6 +4,7 @@ import requests
 import os
 import re
 import unicodedata
+import time
 
 app = Flask(__name__)
 
@@ -246,8 +247,128 @@ def responder_pregunta_frecuente(texto):
     return None
 
 
-def preparar_respuesta(texto):
+# Memoria temporal por remitente para pruebas de cotizacion.
+# Se borra cuando Render reinicia o tras 30 minutos sin actividad.
+COTIZACIONES = {}
+DURACION_COTIZACION = 30 * 60
+
+
+def flujo_cotizacion(texto, sender):
+    ahora = time.monotonic()
+
+    # Limitar datos guardados en memoria.
+    for numero, datos in list(COTIZACIONES.items()):
+        if ahora - datos["actualizado"] > DURACION_COTIZACION:
+            del COTIZACIONES[numero]
+
+    if len(COTIZACIONES) > 500:
+        mas_antiguo = min(
+            COTIZACIONES, key=lambda clave: COTIZACIONES[clave]["actualizado"]
+        )
+        del COTIZACIONES[mas_antiguo]
+
+    limpio = normalizar(texto.strip())
+    estado = COTIZACIONES.get(sender)
+
+    if limpio in {"cancelar", "salir", "cancelar cotizacion"} and estado:
+        del COTIZACIONES[sender]
+        return (
+            "Listo, cancelamos el borrador de cotizacion. "
+            "Puedes escribir COTIZAR para empezar otra vez."
+        )
+
+    if not estado:
+        palabras = set(re.findall(r"[a-z0-9]+", limpio))
+        if not palabras.intersection({
+            "cotizar", "cotizacion", "cotizaciones", "cotizame", "presupuesto"
+        }):
+            return None
+
+        COTIZACIONES[sender] = {
+            "paso": "producto",
+            "actualizado": ahora
+        }
+        return (
+            "¡Claro! 📝 Vamos a preparar un borrador de cotizacion. "
+            "Todavia no daremos precios ni enviaremos la solicitud "
+            "a ventas.\n\n"
+            "Primero, ¿que producto o referencia necesitas? "
+            "(Puedes escribir CANCELAR en cualquier momento)."
+        )
+
+    estado["actualizado"] = ahora
+
+    if limpio in {"cotizar", "cotizacion", "cotizaciones"}:
+        preguntas = {
+            "producto": "¿Que producto o referencia necesitas?",
+            "cantidad": "¿Cuantas piezas necesitas? (Ejemplo: 100)",
+            "ciudad": "¿A que ciudad seria el envio?"
+        }
+        return preguntas.get(estado["paso"], "Escribe CANCELAR para empezar de nuevo.")
+
+    if estado["paso"] == "producto":
+        producto = texto.strip()
+        if not 3 <= len(producto) <= 120:
+            return "Escribe el nombre o la referencia del producto (maximo 120 caracteres)."
+
+        estado["producto"] = producto
+        estado["paso"] = "cantidad"
+        return (
+            "Anotado el producto: " + producto +
+            "\n¿Cuantas piezas necesitas? (Ejemplo: 100)"
+        )
+
+    if estado["paso"] == "cantidad":
+        cantidad_match = re.fullmatch(
+            r"\s*(\d{1,6})(?:\s*(?:piezas?|unidades?|pz|uds?))?\s*",
+            limpio
+        )
+        if not cantidad_match:
+            return "Dime solo la cantidad de piezas. Por ejemplo: 100"
+
+        cantidad = int(cantidad_match.group(1))
+        if not 1 <= cantidad <= 100000:
+            return "La cantidad debe estar entre 1 y 100000 piezas."
+
+        estado["cantidad"] = cantidad
+        estado["paso"] = "ciudad"
+        return (
+            f"Perfecto, {cantidad} piezas. 📦 "
+            "¿A que ciudad seria el envio? (No necesitas dar tu direccion)."
+        )
+
+    if estado["paso"] == "ciudad":
+        ciudad = re.sub(r"^(a|en)\s+", "", texto.strip(), flags=re.I).strip()
+        if not (2 <= len(ciudad) <= 60 and re.fullmatch(
+            r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ .'-]+", ciudad
+        )):
+            return "Escribe solo la ciudad de destino. Ejemplo: Guadalajara."
+
+        resumen = (
+            "📝 BORRADOR DE SOLICITUD\n\n"
+            f"Producto solicitado: {estado['producto']}\n"
+            f"Cantidad: {estado['cantidad']} piezas\n"
+            f"Ciudad: {ciudad}\n\n"
+            "Este resumen NO es un pedido ni se envio a ventas. "
+            "Producto, precios, existencias, envio y personalizacion "
+            "estan pendientes de confirmar. "
+            "Puedes compartir el resumen con ventas usando los "
+            "canales oficiales de Carnevali Estuches."
+        )
+        del COTIZACIONES[sender]
+        return resumen
+
+    del COTIZACIONES[sender]
+    return "Vamos a empezar de nuevo. Escribe COTIZAR."
+
+
+def preparar_respuesta(texto, sender=None):
     texto_limpio = normalizar(texto.strip())
+
+    if sender:
+        respuesta_cotizacion = flujo_cotizacion(texto, sender)
+        if respuesta_cotizacion is not None:
+            return respuesta_cotizacion
 
     if texto_limpio in {"hola", "buenas", "buenos dias", "buenas tardes"}:
         return (
@@ -345,7 +466,7 @@ def webhook():
             sender = message["from"]
             texto = message["text"]["body"]
 
-            respuesta_bot = preparar_respuesta(texto)
+            respuesta_bot = preparar_respuesta(texto, sender)
 
             url = (
                 f"https://graph.facebook.com/v23.0/"
