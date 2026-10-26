@@ -846,6 +846,7 @@ def panel_ventas():
         opciones_filtro[0] = '<option value="todos" selected>Todos los estados</option>'
 
     filas = []
+    tarjetas_movil = []
     for folio, producto, referencia, cantidad, ciudad, telefono, estado, fecha in solicitudes:
         etiqueta = ESTADOS_VENTAS.get(estado, e(estado))
         opciones = []
@@ -869,6 +870,32 @@ def panel_ventas():
             '" name="estado">' + "".join(opciones) + '</select>'
             '<button type="submit">Guardar</button></form>'
         )
+        # La misma acción protegida en vistas distintas, con IDs únicos.
+        formulario_movil = (
+            formulario.replace('for="estado-', 'for="movil-estado-')
+            .replace('id="estado-', 'id="movil-estado-')
+        )
+        tarjetas_movil.append(
+            '<article class="solicitud-card">'
+            '<div class="solicitud-top">'
+            '<div><div class="eyebrow">Folio</div>'
+            f'<b class="folio">{e(folio)}</b>'
+            f'<div class="muted">{e(_formato_fecha_ventas(fecha))}</div></div>'
+            f'<span class="chip estado-{e(estado)}">{e(etiqueta)}</span>'
+            '</div>'
+            f'<h3>{e(producto)}</h3>'
+            f'<div class="muted">Referencia: {e(referencia)}</div>'
+            '<dl class="detalles">'
+            f'<div><dt>Piezas</dt><dd>{e(cantidad)}</dd></div>'
+            f'<div><dt>Destino</dt><dd>{e(ciudad)}</dd></div>'
+            '<div><dt>WhatsApp</dt>'
+            f'<dd><a href="https://wa.me/{e(telefono)}" '
+            f'rel="noopener noreferrer" target="_blank">{e(telefono)}</a></dd></div>'
+            '</dl>'
+            '<div class="editar-estado"><div class="eyebrow">Actualizar estado</div>'
+            + formulario_movil +
+            '</div></article>'
+        )
         filas.append(
             '<tr>'
             f'<td><b>{e(folio)}</b><div class="muted">{e(_formato_fecha_ventas(fecha))}</div></td>'
@@ -886,6 +913,13 @@ def panel_ventas():
         tabla = "".join(filas)
     else:
         tabla = '<tr><td colspan="6" class="vacio">No hay solicitudes con esos filtros.</td></tr>'
+
+    if tarjetas_movil:
+        contenido_movil = "".join(tarjetas_movil)
+    else:
+        contenido_movil = (
+            '<div class="vacio">No hay solicitudes con esos filtros.</div>'
+        )
 
     total_general = sum(conteos.values())
     tarjetas = [
@@ -948,12 +982,40 @@ def panel_ventas():
     .pagination{display:flex;justify-content:space-between;padding:17px;gap:12px;align-items:center;color:#627084}
     .pagination a{color:#194a75;text-decoration:none;font-weight:600;padding:8px}
     .desactivado{opacity:.35}.vacio{text-align:center;padding:45px;color:#6b7788}
+    .mobile-list{display:none}
+    .solicitud-card{background:white;border:1px solid #e1e5eb;border-radius:12px;
+      padding:17px;min-width:0;overflow-wrap:anywhere}
+    .solicitud-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+    .folio{display:block;font-size:14px;line-height:1.5}
+    .eyebrow{font-size:11px;font-weight:650;text-transform:uppercase;
+      letter-spacing:.08em;color:#64738a;margin-bottom:4px}
+    .solicitud-card h3{font-size:17px;line-height:1.35;margin:18px 0 4px}
+    .solicitud-card .chip{flex-shrink:0;font-size:11px}
+    .detalles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:12px;margin:16px 0}
+    .detalles div:last-child{grid-column:1/-1}
+    .detalles dt{font-size:12px;color:#657284}
+    .detalles dd{margin:4px 0 0;font-size:15px;font-weight:600;overflow-wrap:anywhere}
+    .editar-estado{padding-top:13px;border-top:1px solid #e9edf2}
+    .editar-estado .accion{display:grid;grid-template-columns:minmax(0,1fr) auto;
+      white-space:normal;margin-top:8px}
+    .editar-estado .accion select,.editar-estado .accion button{
+      min-height:44px;font-size:14px}
     .exito{background:#eaf7ee;color:#17643f;padding:12px 16px;border-radius:9px}
     .nota{font-size:12px;color:#6b7788;margin-top:14px}
     .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
     a{color:#1a5687}
-    @media(max-width:650px){.wrap{padding:18px 12px 48px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}
-      .stat{padding:13px}.stat strong{font-size:25px}.toolbar{padding:13px}.buscar{width:100%}}
+    @media(max-width:760px){
+      .desktop-view{display:none}
+      .mobile-list{display:grid;gap:12px;padding:12px;background:#f5f6f8}
+      .wrap{padding:18px 12px 48px}
+      .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .stat{padding:13px}.stat strong{font-size:25px}
+      .toolbar{padding:13px}.buscar{width:100%}
+      .buscar input[type="search"]{width:100%;flex:1 0 100%;min-width:0}
+      .buscar select{min-width:0;max-width:100%}
+      .pagination{flex-wrap:wrap}
+    }
     </style></head><body><main class="wrap">
     <header class="top"><div><h1>Carnevali Estuches</h1>
     <p>Panel privado de solicitudes de cotización</p></div>
@@ -970,7 +1032,8 @@ def panel_ventas():
     <label class="sr-only" for="estado">Filtrar por estado</label>
     <select id="estado" name="estado">""" + "".join(opciones_filtro) + """</select>
     <button type="submit">Buscar</button></form></div>
-    <div class="scroll"><table><thead><tr>
+    <div class="mobile-list" aria-label="Cotizaciones en tarjetas">""" + contenido_movil + """</div>
+    <div class="scroll desktop-view"><table><thead><tr>
     <th>Folio / fecha</th><th>Producto</th><th>Piezas</th>
     <th>Destino</th><th>WhatsApp</th><th>Estado / acción</th>
     </tr></thead><tbody>""" + tabla + """</tbody></table></div>
