@@ -263,18 +263,9 @@ def responder_pregunta_frecuente(texto):
 # Reiniciar Render borra los borradores; no se guardan en Shopify ni Dolibarr.
 # Solicitudes completadas se guardan en PostgreSQL externo cuando
 # DATABASE_URL y SALES_VIEW_PASSWORD estan configuradas en Render.
-CREAR_TABLA_SOLICITUDES = """
-CREATE TABLE IF NOT EXISTS solicitudes_cotizacion (
-    folio VARCHAR(48) PRIMARY KEY,
-    producto VARCHAR(200) NOT NULL,
-    referencia VARCHAR(100),
-    cantidad INTEGER NOT NULL CHECK (cantidad > 0),
-    ciudad VARCHAR(80) NOT NULL,
-    telefono VARCHAR(32) NOT NULL,
-    estado VARCHAR(20) NOT NULL DEFAULT 'nuevo',
-    creada_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
-)
-"""
+# La tabla de solicitudes ya esta creada en Neon.
+# El bot solo consulta y guarda registros, nunca modifica el esquema.
+
 
 
 def almacenamiento_configurado():
@@ -295,7 +286,6 @@ def guardar_solicitud(estado, sender):
             DATABASE_URL, connect_timeout=8, sslmode="require"
         ) as conexion:
             with conexion.cursor() as cursor:
-                cursor.execute(CREAR_TABLA_SOLICITUDES)
                 cursor.execute(
                     """
                     INSERT INTO solicitudes_cotizacion
@@ -718,7 +708,6 @@ def panel_ventas():
             DATABASE_URL, connect_timeout=8, sslmode="require"
         ) as conexion:
             with conexion.cursor() as cursor:
-                cursor.execute(CREAR_TABLA_SOLICITUDES)
                 cursor.execute(
                     """
                     SELECT folio, producto, referencia, cantidad,
