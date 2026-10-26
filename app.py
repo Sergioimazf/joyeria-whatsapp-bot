@@ -289,6 +289,9 @@ def guardar_solicitud(estado, sender):
             DATABASE_URL, connect_timeout=8, sslmode="require"
         ) as conexion:
             with conexion.cursor() as cursor:
+                # Limitar los privilegios usados en esta transaccion.
+                # Si el rol no esta disponible, PostgreSQL cancela la operacion.
+                cursor.execute("SET LOCAL ROLE carnevali_rw")
                 cursor.execute(
                     """
                     INSERT INTO solicitudes_cotizacion
@@ -797,6 +800,9 @@ def panel_ventas():
             DATABASE_URL, connect_timeout=8, sslmode="require"
         ) as conexion:
             with conexion.cursor() as cursor:
+                # Limitar los privilegios usados en esta transaccion.
+                # Si el rol no esta disponible, PostgreSQL cancela la operacion.
+                cursor.execute("SET LOCAL ROLE carnevali_rw")
                 cursor.execute(
                     "SELECT estado, COUNT(*) "
                     "FROM solicitudes_cotizacion GROUP BY estado"
@@ -1069,6 +1075,9 @@ def actualizar_estado_venta():
             DATABASE_URL, connect_timeout=8, sslmode="require"
         ) as conexion:
             with conexion.cursor() as cursor:
+                # Limitar los privilegios usados en esta transaccion.
+                # Si el rol no esta disponible, PostgreSQL cancela la operacion.
+                cursor.execute("SET LOCAL ROLE carnevali_rw")
                 cursor.execute(
                     "UPDATE solicitudes_cotizacion SET estado = %s "
                     "WHERE folio = %s RETURNING folio",
