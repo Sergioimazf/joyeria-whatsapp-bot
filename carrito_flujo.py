@@ -37,8 +37,12 @@ def _terminos(texto):
         "pulseras": "pulsera", "collares": "collar",
         "cadenas": "cadena", "relojes": "reloj",
     }
+    normalizado = _norm(texto).strip()
+    # Preservar referencias como 1481.NB o 3042-CH al buscarlas.
+    if re.fullmatch(r"[a-z0-9]+[._-][a-z0-9._-]+", normalizado):
+        return [normalizado]
     resultado = []
-    for palabra in re.findall(r"[a-z0-9]+", _norm(texto)):
+    for palabra in re.findall(r"[a-z0-9]+", normalizado):
         palabra = plurales.get(palabra, palabra)
         if palabra in ruido or len(palabra) < 3:
             continue
