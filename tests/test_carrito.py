@@ -55,5 +55,26 @@ class CarritoTests(unittest.TestCase):
             agregar_linea(carrito, {"nombre": "Navy", "ref": "1481.NB"}, 1)
 
 
+    def test_cantidades_variables_y_sin_cotizar(self):
+        ejemplos = [
+            ("quiero 100 cajas para anillos y 20 cajas para collares", [100, 20]),
+            ("necesito 37 anillos y 75 collares", [37, 75]),
+            ("Quiero cotizar 250 cajas azules, 80 cajas rosas; 15 cajas negras", [250, 80, 15]),
+            ("100 cajas para anillos y 50 cajas para collares", [100, 50]),
+        ]
+        for entrada, cantidades in ejemplos:
+            with self.subTest(entrada=entrada):
+                self.assertEqual([p["cantidad"] for p in extraer_lotes(entrada)], cantidades)
+
+    def test_no_adivina_cantidades_invalidas(self):
+        for texto in [
+            "quiero 0 cajas para anillos",
+            "quiero 1000000 cajas para anillos",
+            "quiero 100 cajas para anillos y veinte para collares",
+        ]:
+            with self.subTest(texto=texto):
+                self.assertEqual(extraer_lotes(texto), [])
+
+
 if __name__ == "__main__":
     unittest.main()
