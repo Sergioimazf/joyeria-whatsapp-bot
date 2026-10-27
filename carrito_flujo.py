@@ -182,14 +182,10 @@ def _buscar_producto(estado, descripcion, buscar, obtener_terminos):
     opciones = sorted(opciones, key=relevancia, reverse=True)[:5]
     estado["opciones"] = opciones
     estado["paso"] = "elegir"
-    if len(opciones) == 1 or any(
-        _norm(p["ref"]) == referencia_buscada
-        for p in opciones if p["ref"]
-    ):
-        elegido = next(
-            (p for p in opciones if p["ref"] and _norm(p["ref"]) == referencia_buscada),
-            opciones[0]
-        )
+    # Una búsqueda genérica nunca debe agregar automáticamente el único
+    # resultado. Solo una referencia explícita y exacta autoriza elegirlo.
+    if any(p["ref"] and _norm(p["ref"]) == referencia_buscada for p in opciones):
+        elegido = next(p for p in opciones if p["ref"] and _norm(p["ref"]) == referencia_buscada)
         return _seleccionar_producto(estado, elegido, buscar, obtener_terminos)
 
     lineas = ["Encontré estas opciones en el catálogo de Carnevali:"]
