@@ -190,29 +190,27 @@ def _elegir(estado, texto, buscar, obtener_terminos):
 
 
 def _reponer_articulo_omitido(estado, texto, buscar, obtener_terminos):
-    """Recupera una cantidad numérica explícita si el cliente reporta un faltante.
+    """Recupera un artículo omitido con cantidad numérica explícita.
 
-    No modifica la cotización si no hay producto o cantidad identificable.
+    Solicita elegir la referencia real antes de añadirlo al carrito.
     """
     limpio = _norm(texto).strip()
     patron = (
         r"^(?:(?:oye|pero|mira)[, ]+)?"
-        r"(?:te\\s+)?(?:faltaron|faltan|olvidaste|falto|falta|"
-        r"no\\s+agregaste|no\\s+incluiste)\\s+"
-        r"(?:las?|unos?|unas?|otros?|otras?)?\\s*"
-        r"(\\d{1,6})\\s+"
-        r"(?:(?:piezas?|unidades?|estuches?|cajas?)\\s+)?"
-        r"(?:de\\s+|para\\s+)?(.+?)\\s*[.!]?$"
+        r"(?:te\s+)?(?:faltaron|faltan|olvidaste|falto|falta|"
+        r"no\s+agregaste|no\s+incluiste)\s+"
+        r"(?:las?|unos?|unas?|otros?|otras?)?\s*"
+        r"(\d{1,6})\s+"
+        r"(?:(?:piezas?|unidades?|estuches?|cajas?)\s+)?"
+        r"(?:de\s+|para\s+)?(.+?)\s*[.!]?$"
     )
-    match = re.fullmatch(patron.replace("\\\\", "\\"), limpio)
+    match = re.fullmatch(patron, limpio)
     if match is None:
         return None
     cantidad = int(match.group(1))
     descripcion = match.group(2).strip()
     if not 1 <= cantidad <= 100000 or not 3 <= len(descripcion) <= 120:
         return "Dime cuántas piezas faltan y el producto, por ejemplo: FALTARON 15 DE PULSERA."
-    # Si ya había un artículo en búsqueda, no perderlo al atender el mensaje:
-    # preguntar al usuario que termine ese artículo primero.
     if estado.get("cantidad_sugerida") is not None or estado.get("paso") in {"elegir", "cantidad"}:
         return (
             "Todavía estamos eligiendo un modelo de tu solicitud. "
@@ -221,7 +219,7 @@ def _reponer_articulo_omitido(estado, texto, buscar, obtener_terminos):
     estado["cantidad_sugerida"] = cantidad
     estado["paso"] = "producto"
     respuesta = _buscar_producto(estado, descripcion, buscar, obtener_terminos)
-    return f"Entendido: faltaron {cantidad} piezas de {descripcion}.\\n" + respuesta
+    return f"Entendido: faltaron {cantidad} piezas de {descripcion}.\n" + respuesta
 
 
 def _iniciar_busqueda(estado, texto, buscar, obtener_terminos):
@@ -354,7 +352,7 @@ def manejar_carrito(sender, texto, buscar, obtener_terminos, guardar, disponible
             return "¿Qué artículo te faltó agregar?"
         if limpio in {"volver", "editar", "cambiar carrito"}:
             estado["paso"] = "carrito"
-            return "Puedes editar el carrito.\\n\\n" + _controles(estado["items"])
+            return "Puedes editar el carrito.\n\n" + _controles(estado["items"])
         if limpio not in {"confirmar", "confirmo", "si confirmo"}:
             return "Escribe CONFIRMAR para guardar o CANCELAR para descartar."
         if not disponible():
