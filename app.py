@@ -1,6 +1,6 @@
 
 from flask import Flask, request, Response, redirect, url_for
-from carrito_flujo import manejar_carrito
+from carrito_flujo import manejar_carrito, SESIONES as SESIONES_CARRITO
 import requests
 import os
 import re
@@ -28,7 +28,10 @@ DOLIBARR_URL = "https://carnevali.dolibarrmnet.com/api/index.php"
 DOLIBARR_API_KEY = os.getenv("DOLIBARR_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 SALES_VIEW_PASSWORD = os.getenv("SALES_VIEW_PASSWORD")
-CARRITO_MULTIPRODUCTO = os.getenv("CARRITO_MULTIPRODUCTO", "0") == "1"
+CARRITO_CONFIG = os.getenv("CARRITO_MULTIPRODUCTO", "0").strip().lower()
+CARRITO_MULTIPRODUCTO = CARRITO_CONFIG in {"1", "pruebas"}
+CARRITO_MODO_PRUEBA = CARRITO_CONFIG == "pruebas"
+CARRITO_TESTERS = set()  # Opt-in temporal; desaparece al reiniciar Render.
 
 
 PALABRAS_COMUNES = {
@@ -664,8 +667,31 @@ def flujo_cotizacion(texto, sender):
 def preparar_respuesta(texto, sender=None):
     texto_limpio = normalizar(texto.strip())
 
-    # Carrito experimental: desactivado en producción hasta migrar Neon.
-    if sender and CARRITO_MULTIPRODUCTO:
+    # Modo controlado: solo el remitente que pida PROBAR CARRITO
+    # usa el flujo nuevo. El resto continúa con el flujo anterior.
+    if sender and CARRITO_MODO_PRUEBA:
+        if texto_limpio == "probar carrito":
+            CARRITO_TESTERS.add(sender)
+            COTIZACIONES.pop(sender, None)
+            SESIONES_CARRITO.pop(sender, None)
+            return (
+                "🧪 Modo de prueba multiproducto activado. "
+                "Escribe COTIZAR para empezar. "
+                "Puedes salir cuando quieras con SALIR PRUEBA."
+            )
+        if sender in CARRITO_TESTERS and texto_limpio in {
+            "salir prueba", "terminar prueba"
+        }:
+            CARRITO_TESTERS.discard(sender)
+            SESIONES_CARRITO.pop(sender, None)
+            return (
+                "Modo de prueba desactivado. "
+                "Puedes seguir usando la atención habitual."
+            )
+
+    if sender and CARRITO_MULTIPRODUCTO and (
+        not CARRITO_MODO_PRUEBA or sender in CARRITO_TESTERS
+    ):
         respuesta_carrito = manejar_carrito(
             sender, texto, buscar_productos, obtener_terminos,
             guardar_solicitud_multiple, almacenamiento_configurado
