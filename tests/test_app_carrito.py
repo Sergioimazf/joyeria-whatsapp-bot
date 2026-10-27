@@ -30,6 +30,7 @@ class AplicacionCarritoTests(unittest.TestCase):
     def setUp(self):
         carrito_flujo.SESIONES.clear()
         app.COTIZACIONES.clear()
+        app.CARRITO_TESTERS.clear()
         self.folios_guardados = []
         self.patches = [
             patch.object(app, "CARRITO_MULTIPRODUCTO", True),
@@ -95,6 +96,39 @@ class AplicacionCarritoTests(unittest.TestCase):
         self.assertIn("¿Qué producto", respuesta)
         self.assertFalse(carrito_flujo.SESIONES)
 
+
+    def test_modo_pruebas_requiere_activacion(self):
+        numero = "5218123456789"
+        with patch.object(app, "CARRITO_MULTIPRODUCTO", True), patch.object(
+            app, "CARRITO_MODO_PRUEBA", True
+        ):
+            inicio = self.mensaje("COTIZAR")
+            self.assertIn("¿Qué producto", inicio)
+            self.assertNotIn(numero, carrito_flujo.SESIONES)
+            self.assertIn(numero, app.COTIZACIONES)
+
+            mensaje = self.mensaje("PROBAR CARRITO")
+            self.assertIn("activado", mensaje)
+            self.assertIn(numero, app.CARRITO_TESTERS)
+            self.assertNotIn(numero, app.COTIZACIONES)
+
+            respuesta = self.mensaje("cotizar 100 cajas para anillos y 20 cajas para collares")
+            self.assertIn("1481.NB", respuesta)
+            self.assertIn(numero, carrito_flujo.SESIONES)
+
+            mensaje_salida = self.mensaje("SALIR PRUEBA")
+            self.assertIn("desactivado", mensaje_salida)
+            self.assertNotIn(numero, carrito_flujo.SESIONES)
+            self.assertNotIn(numero, app.CARRITO_TESTERS)
+
+    def test_otro_remitente_sigue_con_flujo_anterior(self):
+        with patch.object(app, "CARRITO_MULTIPRODUCTO", True), patch.object(
+            app, "CARRITO_MODO_PRUEBA", True
+        ):
+            self.mensaje("PROBAR CARRITO")
+            respuesta = app.preparar_respuesta("COTIZAR", sender="5218111111111")
+            self.assertIn("¿Qué producto", respuesta)
+            self.assertNotIn("5218111111111", carrito_flujo.SESIONES)
 
 if __name__ == "__main__":
     unittest.main()
