@@ -53,6 +53,10 @@ def extraer_lotes(texto):
             return []
         cantidad = int(match.group(1))
         descripcion = re.sub(r"^(?:de|para|unas?|unos?|las?|los?)\s+", "", match.group(2), flags=re.I).strip()
+        # Una conjunción sin cantidad expresa puede esconder otro artículo:
+        # «100 cajas para anillos y veinte para collares» requiere aclaración.
+        if re.search(r"\s+y\s+|\s+adem[aá]s\s+", descripcion, flags=re.I):
+            return []
         if not (1 <= cantidad <= MAX_PIEZAS and 3 <= len(descripcion) <= 120):
             return []
         resultado.append({"descripcion": descripcion, "cantidad": cantidad})
