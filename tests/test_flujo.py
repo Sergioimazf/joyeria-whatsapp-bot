@@ -283,5 +283,23 @@ class FlujoTests(unittest.TestCase):
         self.assertEqual(carrito_flujo.SESIONES["5218123456789"]["items"], [])
 
 
+    def test_agregame_con_cantidad_en_carrito(self):
+        self.responder("COTIZAR 100 1481.NB")
+        r = self.responder("Agrégame 200 cajas para anillos")
+        self.assertIn("1481.NB", r)
+        self.assertEqual(carrito_flujo.SESIONES["5218123456789"]["cantidad_sugerida"], 200)
+        r = self.responder("1")
+        self.assertIn("300 piezas", r)
+
+    def test_pregunta_con_signos_en_opciones(self):
+        self.responder("COTIZAR")
+        self.responder("cajas para anillos")
+        r = self.responder("¿Qué productos son?")
+        self.assertIn("nombres exactos", r)
+        r = self.responder("¿Puedo ver fotos?")
+        self.assertIn("fotografías verificadas", r)
+        self.assertEqual(carrito_flujo.SESIONES["5218123456789"]["paso"], "elegir")
+
+
 if __name__ == "__main__":
     unittest.main()
