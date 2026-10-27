@@ -119,5 +119,91 @@ class FlujoTests(unittest.TestCase):
         self.assertEqual(self.guardados, [])
 
 
+    def test_otra_no_pierde_98_anillos_ni_15_pulseras(self):
+        """Reproduce el error reportado con capturas del WhatsApp real."""
+        catalogo = [
+            {"label": "ESTUCHE ANILLO MONACO AZUL", "ref": "1821"},
+            {"label": "ESTUCHE ANILLO CARTE ROJO", "ref": "3801.RD"},
+            {"label": "ESTUCHE ANILLO LUZ LED ROJO", "ref": "3541.RD"},
+            {"label": "ESTUCHE PULSERA NEGRA", "ref": "PUL-1"},
+            {"label": "ESTUCHE PULSERA ROJA", "ref": "PUL-2"},
+        ]
+
+        def buscar_prueba(terminos, limite=60):
+            return [
+                p for p in catalogo
+                if all(t in (p["label"] + " " + p["ref"]).lower() for t in terminos)
+            ][:limite]
+
+        def responder(texto):
+            return manejar_carrito(
+                "5218123456789", texto, buscar_prueba,
+                carrito_flujo._terminos, self.guardar, lambda: self.db_listo
+            )
+
+        responder("cotizar")
+        primera = responder("Quiero 98 estuches para anillos y 15 estuches para pulseras")
+        self.assertIn("1821", primera)
+        alternativa = responder("Otra")
+        self.assertIn("98 piezas", alternativa)
+        opciones_rojas = responder("Estuche para anillo rojo")
+        self.assertIn("3801.RD", opciones_rojas)
+        siguiente = responder("3801.RD")
+        self.assertIn("98 piezas", siguiente)
+        self.assertIn("PUL", siguiente)
+        estado = carrito_flujo.SESIONES["5218123456789"]
+        self.assertEqual(estado["items"][0]["cantidad"], 98)
+        self.assertEqual(estado["cantidad_sugerida"], 15)
+        fin = responder("PUL-1")
+        self.assertIn("15 piezas", fin)
+        self.assertIn("98 piezas", fin)
+        self.assertEqual(len(estado["items"]), 2)
+        self.assertEqual(sum(p["cantidad"] for p in estado["items"]), 113)
+
+    def test_reconoce_te_faltaron_15_de_pulsera(self):
+        catalogo = [
+            {"label": "ESTUCHE PARA ANILLO ROJO", "ref": "3801.RD"},
+            {"label": "ESTUCHE PULSERA NEGRA", "ref": "PUL-1"},
+            {"label": "ESTUCHE PULSERA ROJA", "ref": "PUL-2"},
+        ]
+
+        def buscar_prueba(terminos, limite=60):
+            return [
+                p for p in catalogo
+                if all(t in (p["label"] + " " + p["ref"]).lower() for t in terminos)
+            ][:limite]
+
+        def responder(texto):
+            return manejar_carrito(
+                "5218123456789", texto, buscar_prueba,
+                carrito_flujo._terminos, self.guardar, lambda: self.db_listo
+            )
+
+        responder("COTIZAR")
+        responder("98 3801.RD")
+        correccion = responder("Te faltaron las 15 de pulsera")
+        self.assertIn("15 piezas", correccion)
+        self.assertIn("PUL-1", correccion)
+        resumen = responder("PUL-1")
+        self.assertIn("98 piezas", resumen)
+        self.assertIn("15 piezas", resumen)
+        self.assertEqual([p["cantidad"] for p in carrito_flujo.SESIONES["5218123456789"]["items"]], [98, 15])
+
+    def test_correccion_antes_de_confirmar_exige_nueva_confirmacion(self):
+        self.responder("COTIZAR 98 1481.NB")
+        self.responder("LISTO")
+        self.responder("Monterrey")
+        respuesta = self.responder("Te faltaron las 15 de collar")
+        self.assertIn("15 piezas", respuesta)
+        self.assertIn("3020.NG", respuesta)
+        self.responder("3020.NG")
+        self.assertEqual(self.guardados, [])
+        self.responder("LISTO")
+        revisar = self.responder("Monterrey")
+        self.assertIn("113 piezas", revisar)
+        self.assertEqual(self.guardados, [])
+        self.responder("CONFIRMAR")
+        self.assertEqual([i["cantidad"] for i in self.guardados[0][0]], [98, 15])
+
 if __name__ == "__main__":
     unittest.main()

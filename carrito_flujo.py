@@ -160,9 +160,16 @@ def _elegir(estado, texto, buscar, obtener_terminos):
     if limpio in {"otra", "otro", "ninguna", "ninguno"}:
         estado["paso"] = "producto"
         estado.pop("opciones", None)
-        estado.pop("cantidad_sugerida", None)
-        estado.pop("pendientes", None)
-        return "¿Qué otro producto buscas?"
+        # OTRA cambia el modelo que se está buscando, no la cantidad solicitada
+        # ni los demás artículos pendientes del mensaje original.
+        cantidad_pendiente = estado.get("cantidad_sugerida")
+        if cantidad_pendiente is not None:
+            return (
+                f"Claro. Mantengo {cantidad_pendiente} piezas de este artículo "
+                "y los demás productos de tu solicitud. "
+                "¿Qué otro modelo o referencia buscas?"
+            )
+        return "¿Qué otro producto o referencia buscas?"
     seleccion = re.fullmatch(r"(?:la |el |opcion |opcion numero )?([1-5])", limpio)
     numero = int(seleccion.group(1)) if seleccion else None
     if numero is None:
@@ -180,6 +187,39 @@ def _elegir(estado, texto, buscar, obtener_terminos):
     if producto is None:
         return "Elige una opción de la lista por número o referencia; escribe OTRA para buscar de nuevo."
     return _seleccionar_producto(estado, producto, buscar, obtener_terminos)
+
+
+def _reponer_articulo_omitido(estado, texto, buscar, obtener_terminos):
+    """Recupera un artículo omitido con cantidad numérica explícita.
+
+    Solicita elegir la referencia real antes de añadirlo al carrito.
+    """
+    limpio = _norm(texto).strip()
+    patron = (
+        r"^(?:(?:oye|pero|mira)[, ]+)?"
+        r"(?:te\s+)?(?:faltaron|faltan|olvidaste|falto|falta|"
+        r"no\s+agregaste|no\s+incluiste)\s+"
+        r"(?:las?|unos?|unas?|otros?|otras?)?\s*"
+        r"(\d{1,6})\s+"
+        r"(?:(?:piezas?|unidades?|estuches?|cajas?)\s+)?"
+        r"(?:de\s+|para\s+)?(.+?)\s*[.!]?$"
+    )
+    match = re.fullmatch(patron, limpio)
+    if match is None:
+        return None
+    cantidad = int(match.group(1))
+    descripcion = match.group(2).strip()
+    if not 1 <= cantidad <= 100000 or not 3 <= len(descripcion) <= 120:
+        return "Dime cuántas piezas faltan y el producto, por ejemplo: FALTARON 15 DE PULSERA."
+    if estado.get("cantidad_sugerida") is not None or estado.get("paso") in {"elegir", "cantidad"}:
+        return (
+            "Todavía estamos eligiendo un modelo de tu solicitud. "
+            "Termina ese artículo primero y luego agregamos el faltante."
+        )
+    estado["cantidad_sugerida"] = cantidad
+    estado["paso"] = "producto"
+    respuesta = _buscar_producto(estado, descripcion, buscar, obtener_terminos)
+    return f"Entendido: faltaron {cantidad} piezas de {descripcion}.\n" + respuesta
 
 
 def _iniciar_busqueda(estado, texto, buscar, obtener_terminos):
@@ -260,6 +300,9 @@ def manejar_carrito(sender, texto, buscar, obtener_terminos, guardar, disponible
             return "Dime solo la cantidad, por ejemplo: 100 piezas."
         return _agregar_seleccion(estado, estado.pop("producto"), cantidad, buscar, obtener_terminos)
     if paso == "carrito":
+        faltante = _reponer_articulo_omitido(estado, texto, buscar, obtener_terminos)
+        if faltante is not None:
+            return faltante
         if limpio in {"agregar", "anadir", "añadir", "otro producto"}:
             estado["paso"] = "producto"
             return "¿Qué producto o referencia quieres agregar?"
@@ -299,6 +342,17 @@ def manejar_carrito(sender, texto, buscar, obtener_terminos, guardar, disponible
             "de WhatsApp para que ventas la revise. Escribe CANCELAR para descartarla."
         )
     if paso == "confirmar":
+        # El cliente puede corregir el borrador; se exigirá una nueva
+        # revisión y CONFIRMAR antes de guardar sus datos.
+        faltante = _reponer_articulo_omitido(estado, texto, buscar, obtener_terminos)
+        if faltante is not None:
+            return faltante
+        if limpio in {"agregar", "anadir", "añadir"}:
+            estado["paso"] = "producto"
+            return "¿Qué artículo te faltó agregar?"
+        if limpio in {"volver", "editar", "cambiar carrito"}:
+            estado["paso"] = "carrito"
+            return "Puedes editar el carrito.\n\n" + _controles(estado["items"])
         if limpio not in {"confirmar", "confirmo", "si confirmo"}:
             return "Escribe CONFIRMAR para guardar o CANCELAR para descartar."
         if not disponible():
