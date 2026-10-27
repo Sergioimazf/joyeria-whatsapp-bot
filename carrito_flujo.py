@@ -25,23 +25,46 @@ def _norm(texto):
 
 def _terminos(texto):
     ruido = {
-        "quiero", "para", "caja", "cajas", "de", "del", "unos", "unas",
-        "el", "la", "los", "las", "por", "favor", "necesito", "cotizar",
-        "cotizacion", "piezas", "producto", "productos", "un", "una",
+        "quiero", "quisiera", "necesito", "ocupo", "busco", "buscar",
+        "para", "de", "del", "unos", "unas", "los", "las", "por", "favor",
+        "cotizar", "cotizacion", "piezas", "producto", "productos",
+        "un", "una", "dame", "agrega", "agregar", "agregame", "otros",
+        "otro", "otras", "otra", "me", "que", "son", "quieres",
+    }
+    plurales = {
+        "estuches": "estuche", "cajas": "caja",
+        "anillos": "anillo", "aretes": "arete",
+        "pulseras": "pulsera", "collares": "collar",
+        "cadenas": "cadena", "relojes": "reloj",
     }
     resultado = []
     for palabra in re.findall(r"[a-z0-9]+", _norm(texto)):
+        palabra = plurales.get(palabra, palabra)
         if palabra in ruido or len(palabra) < 3:
             continue
-        if palabra == "relojes":
-            palabra = "reloj"
-        elif palabra.endswith("es") and len(palabra) > 5:
-            palabra = palabra[:-2]
-        elif palabra.endswith("s") and len(palabra) > 4:
-            palabra = palabra[:-1]
         if palabra not in resultado:
             resultado.append(palabra)
-    return resultado[:4]
+    return resultado[:5]
+
+
+def _limpiar_descripcion(texto, estado):
+    """Quita cortesías sin borrar la cantidad del artículo solicitado."""
+    s = _norm(texto).strip()
+    s = re.sub(
+        r"^(?:(?:pero|oye|mira)\s+)?"
+        r"(?:(?:quiero|necesito|quisiera|ocupo|busco|buscame|buscame|"
+        r"agregame|agrega|agregar|muestrame|dame)\s+)+", "", s
+    )
+    s = re.sub(r"^(?:unas?|unos?|las?|los?)\s+", "", s)
+    cantidad = re.match(r"^(\d{1,6})\s+(.+)$", s)
+    if cantidad:
+        numero = int(cantidad.group(1))
+        if 1 <= numero <= 100000:
+            # El número explícito prevalece sobre la cantidad sugerida.
+            estado["cantidad_sugerida"] = numero
+            s = cantidad.group(2)
+    s = re.sub(r"^(?:de|del|para|unas?|unos?|las?|los?)\s+", "", s)
+    return s.strip()
 
 
 def _descripcion_producto(producto):
@@ -60,61 +83,117 @@ def _controles(items):
 
 
 def _buscar_producto(estado, descripcion, buscar, obtener_terminos):
-    descripcion = descripcion.strip()
+    descripcion = _limpiar_descripcion(descripcion, estado)
     if not 3 <= len(descripcion) <= 120:
-        return "Dime el nombre o referencia del producto (3 a 120 caracteres)."
-    terminos = obtener_terminos(descripcion)
-    if not terminos:
-        terminos = _terminos(descripcion)
-    if not terminos:
         estado["paso"] = "producto"
-        return "Escribe el nombre o referencia del producto que necesitas."
-    encontrados = buscar(terminos, limite=60)
-    if encontrados == [] and len(terminos) > 1:
-        encontrados = buscar([terminos[-1]], limite=60)
-    if encontrados == []:
-        variantes = _terminos(descripcion)
-        if variantes and variantes != terminos:
-            encontrados = buscar(variantes, limite=60)
-    if encontrados is None:
+        return "Dime qué producto buscas, por ejemplo: estuches para aretes rojos."
+
+    palabras = _terminos(descripcion)
+    if not palabras:
         estado["paso"] = "producto"
-        return "No pude consultar Dolibarr. Repite el producto o escribe CANCELAR."
-    if not encontrados:
-        estado["paso"] = "producto"
-        return "No encontré ese producto. Prueba con otro nombre o referencia."
+        return "¿Qué tipo de caja o estuche necesitas?"
 
-    descripcion_ref = re.sub(r"\s+", "", _norm(descripcion))
-
-    def relevancia(p):
-        label = _norm(p.get("label") or "")
-        ref = _norm(p.get("ref") or "")
-        return (int(ref == descripcion_ref), sum(v in label or v in ref for v in terminos))
-
-    opciones, vistos = [], set()
-    for p in sorted(encontrados, key=relevancia, reverse=True):
-        ref = str(p.get("ref") or "").strip()[:70]
-        nombre = str(p.get("label") or ref).strip()[:140]
-        clave = ref.casefold() or _norm(nombre)
-        if not nombre or clave in vistos:
-            continue
-        vistos.add(clave)
-        opciones.append({"nombre": nombre, "ref": ref})
-        if len(opciones) == 5:
+    referencia_buscada = re.sub(r"\s+", "", _norm(descripcion))
+    empaque = any(t in palabras for t in ("caja", "estuche"))
+    uso = [t for t in palabras if t in {"anillo", "arete", "pulsera", "collar", "reloj"}]
+    color = [t for t in palabras if t in {
+        "rojo", "roja", "azul", "negro", "negra", "blanco", "blanca",
+        "rosa", "dorado", "dorada", "verde", "plateado", "plateada"
+    }]
+    # Intentamos coincidencias estrictas y después una búsqueda más amplia.
+    # El filtro local sigue rechazando referencias de otro tipo de producto.
+    consultas = [palabras[:4]]
+    if uso:
+        consultas.append(uso + color)
+        consultas.append(uso)
+    elif empaque:
+        consultas.append(["caja"] if "caja" in palabras else ["estuche"])
+    else:
+        consultas.append(palabras[-1:])
+    consultas = [q for i, q in enumerate(consultas) if q and q not in consultas[:i]]
+    encontrados = []
+    vistos = set()
+    fallo_api = False
+    for consulta in consultas[:3]:
+        # Los términos ya están normalizados y son filtrados por buscar_productos.
+        respuesta = buscar(consulta, limite=100)
+        if respuesta is None:
+            fallo_api = True
             break
+        for p in respuesta:
+            ref = str(p.get("ref") or "").strip()
+            nombre = str(p.get("label") or ref).strip()
+            key = ref.casefold() or _norm(nombre)
+            if key in vistos or not nombre:
+                continue
+            vistos.add(key)
+            encontrados.append({"nombre": nombre[:140], "ref": ref[:70]})
+        # Si hay candidatos suficientes, no necesitamos más llamadas a Dolibarr.
+        if len(encontrados) >= 75:
+            break
+
+    if fallo_api and not encontrados:
+        estado["paso"] = "producto"
+        return "No pude consultar Dolibarr. Intenta otra vez o pide un vendedor."
+
+    def pasa_filtro(p):
+        label = _norm(p["nombre"])
+        ref = _norm(p["ref"])
+        if ref == referencia_buscada and ref:
+            return True
+        tokens = set(re.findall(r"[a-z0-9]+", label))
+        if empaque and not tokens.intersection({"caja", "cajas", "estuche", "estuches"}):
+            return False
+        if any(not any(t == u or t.startswith(u) for t in tokens) for u in uso):
+            return False
+        if color and not any(t in tokens for t in color):
+            return False
+        if not empaque and not uso and not color:
+            if not any(t in label or t in ref for t in palabras):
+                return False
+        return True
+
+    opciones = [p for p in encontrados if pasa_filtro(p)]
     if not opciones:
         estado["paso"] = "producto"
-        return "No encontré modelos con nombre o referencia válidos. Intenta con otra descripción."
+        descripcion_tipo = (
+            "cajas o estuches con esas características" if empaque
+            else "productos con esas características"
+        )
+        return (
+            f"No encontré {descripcion_tipo} en los resultados del catálogo. "
+            "No quiero ofrecerte un artículo distinto por error. "
+            "Prueba otra descripción o referencia, o solicita ayuda a ventas."
+        )
 
+    def relevancia(p):
+        label = _norm(p["nombre"])
+        ref = _norm(p["ref"])
+        return (
+            int(ref == referencia_buscada),
+            sum(t in label or t in ref for t in palabras),
+            int("estuche" in label or "caja" in label),
+        )
+
+    opciones = sorted(opciones, key=relevancia, reverse=True)[:5]
     estado["opciones"] = opciones
     estado["paso"] = "elegir"
-    if len(opciones) == 1 or any(_norm(p["ref"]) == descripcion_ref for p in opciones if p["ref"]):
-        seleccionado = next((p for p in opciones if p["ref"] and _norm(p["ref"]) == descripcion_ref), opciones[0])
-        return _seleccionar_producto(estado, seleccionado, buscar, obtener_terminos)
+    if len(opciones) == 1 or any(
+        _norm(p["ref"]) == referencia_buscada
+        for p in opciones if p["ref"]
+    ):
+        elegido = next(
+            (p for p in opciones if p["ref"] and _norm(p["ref"]) == referencia_buscada),
+            opciones[0]
+        )
+        return _seleccionar_producto(estado, elegido, buscar, obtener_terminos)
 
-    lineas = ["Encontré estos modelos en Dolibarr:"]
-    for num, p in enumerate(opciones, 1):
-        lineas.append(f"{num}. {_descripcion_producto(p)}")
-    lineas.append("\n¿Cuál quieres? Escribe un número o la referencia; OTRA para buscar de nuevo.")
+    lineas = ["Encontré estas opciones en el catálogo de Carnevali:"]
+    lineas.extend(f"{num}. {_descripcion_producto(p)}" for num, p in enumerate(opciones, 1))
+    lineas.append(
+        "\n¿Cuál modelo buscas? Escribe su número o referencia. "
+        "Si no es ninguno, dime qué característica deseas cambiar."
+    )
     return "\n".join(lineas)
 
 
