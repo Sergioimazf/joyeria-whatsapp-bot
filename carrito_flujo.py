@@ -67,6 +67,7 @@ def _buscar_producto(estado, descripcion, buscar, obtener_terminos):
     if not terminos:
         terminos = _terminos(descripcion)
     if not terminos:
+        estado["paso"] = "producto"
         return "Escribe el nombre o referencia del producto que necesitas."
     encontrados = buscar(terminos, limite=60)
     if encontrados == [] and len(terminos) > 1:
@@ -76,8 +77,10 @@ def _buscar_producto(estado, descripcion, buscar, obtener_terminos):
         if variantes and variantes != terminos:
             encontrados = buscar(variantes, limite=60)
     if encontrados is None:
-        return "No pude consultar Dolibarr. Intenta de nuevo o escribe CANCELAR."
+        estado["paso"] = "producto"
+        return "No pude consultar Dolibarr. Repite el producto o escribe CANCELAR."
     if not encontrados:
+        estado["paso"] = "producto"
         return "No encontré ese producto. Prueba con otro nombre o referencia."
 
     descripcion_ref = re.sub(r"\s+", "", _norm(descripcion))
@@ -99,7 +102,8 @@ def _buscar_producto(estado, descripcion, buscar, obtener_terminos):
         if len(opciones) == 5:
             break
     if not opciones:
-        return "No encontré modelos con nombre o referencia válidos."
+        estado["paso"] = "producto"
+        return "No encontré modelos con nombre o referencia válidos. Intenta con otra descripción."
 
     estado["opciones"] = opciones
     estado["paso"] = "elegir"
@@ -179,6 +183,18 @@ def _elegir(estado, texto, buscar, obtener_terminos):
 
 
 def _iniciar_busqueda(estado, texto, buscar, obtener_terminos):
+    # No buscar palabras como COTIZAR o CARRITO en el catálogo.
+    generico = re.sub(r"\s+", " ", _norm(texto).strip())
+    if generico in {
+        "cotizar", "cotizacion", "cotizaciones", "cotizame",
+        "presupuesto", "carrito", "quiero cotizar",
+        "quiero una cotizacion", "quisiera una cotizacion",
+        "necesito una cotizacion", "quiero presupuesto",
+        "necesito cotizar",
+    }:
+        estado["paso"] = "producto"
+        return "¿Qué producto o referencia quieres agregar? Por ejemplo: 100 cajas para anillos."
+
     lotes = extraer_lotes(texto)
     if lotes:
         estado["pendientes"] = lotes[1:]
@@ -188,7 +204,7 @@ def _iniciar_busqueda(estado, texto, buscar, obtener_terminos):
     estado.pop("pendientes", None)
     descripcion = re.sub(
         r"^(?:(?:quiero|quisiera|necesito)\s+)?"
-        r"(?:cotizar|agregar|agrega|añadir|anadir)\s*",
+        r"(?:cotizar|cotizacion|cotizaciones|cotizame|presupuesto|carrito|agregar|agrega|añadir|anadir)\s*",
         "", texto.strip(), flags=re.I
     ).strip()
     descripcion = re.sub(r"^(?:de|para|un|una|unas|unos|el|la|los|las)\s+", "", descripcion, flags=re.I)
