@@ -247,6 +247,10 @@ def manejar_carrito(sender, texto, buscar, obtener_terminos, guardar, disponible
 
     paso = estado["paso"]
     if paso == "producto":
+        # Si una búsqueda falló dentro de un pedido de varios artículos,
+        # conservar su cantidad y los artículos que todavía faltan.
+        if "cantidad_sugerida" in estado:
+            return _buscar_producto(estado, texto, buscar, obtener_terminos)
         return _iniciar_busqueda(estado, texto, buscar, obtener_terminos)
     if paso == "elegir":
         return _elegir(estado, texto, buscar, obtener_terminos)
