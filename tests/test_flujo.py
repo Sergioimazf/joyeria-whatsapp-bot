@@ -228,15 +228,15 @@ class FlujoTests(unittest.TestCase):
         self.assertIn("4013", opciones)
         self.assertIn("COL-REAL", opciones)
         self.assertNotIn("CARTON", opciones)
+        self.assertIn("570 piezas", opciones)
+        # Si solo hay un modelo coincidente por cada rubro, el sistema
+        # los agrega automáticamente tras validar su referencia real.
+        self.assertEqual(
+            [p["cantidad"] for p in carrito_flujo.SESIONES["5218123456789"]["items"]],
+            [500, 50, 20]
+        )
         mostrar = responder("que productos son?")
-        self.assertIn("nombres exactos", mostrar)
-        siguiente = responder("4013")
-        self.assertIn("COL-REAL", siguiente)
-        self.assertNotIn("4812", siguiente)
-        mas = responder("COL-REAL")
-        self.assertIn("1821", mas)
-        resumen = responder("1821")
-        self.assertIn("570 piezas", resumen)
+        self.assertIn("570 piezas", mostrar)
         quita = responder("Quiero quitar el 3 y agregar otro")
         self.assertIn("¿Qué nuevo producto", quita)
         self.assertEqual(sum(x["cantidad"] for x in carrito_flujo.SESIONES["5218123456789"]["items"]), 550)
