@@ -124,6 +124,7 @@ class FlujoTests(unittest.TestCase):
         catalogo = [
             {"label": "ESTUCHE ANILLO MONACO AZUL", "ref": "1821"},
             {"label": "ESTUCHE ANILLO CARTE ROJO", "ref": "3801.RD"},
+            {"label": "ESTUCHE ANILLO LUZ LED ROJO", "ref": "3541.RD"},
             {"label": "ESTUCHE PULSERA NEGRA", "ref": "PUL-1"},
             {"label": "ESTUCHE PULSERA ROJA", "ref": "PUL-2"},
         ]
@@ -163,6 +164,7 @@ class FlujoTests(unittest.TestCase):
         catalogo = [
             {"label": "ESTUCHE PARA ANILLO ROJO", "ref": "3801.RD"},
             {"label": "ESTUCHE PULSERA NEGRA", "ref": "PUL-1"},
+            {"label": "ESTUCHE PULSERA ROJA", "ref": "PUL-2"},
         ]
 
         def buscar_prueba(terminos, limite=60):
