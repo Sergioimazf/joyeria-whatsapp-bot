@@ -1,5 +1,6 @@
 
 from flask import Flask, request, Response, redirect, url_for
+from carrito_flujo import manejar_carrito
 import requests
 import os
 import re
@@ -27,6 +28,7 @@ DOLIBARR_URL = "https://carnevali.dolibarrmnet.com/api/index.php"
 DOLIBARR_API_KEY = os.getenv("DOLIBARR_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 SALES_VIEW_PASSWORD = os.getenv("SALES_VIEW_PASSWORD")
+CARRITO_MULTIPRODUCTO = os.getenv("CARRITO_MULTIPRODUCTO", "0") == "1"
 
 
 PALABRAS_COMUNES = {
@@ -307,6 +309,54 @@ def guardar_solicitud(estado, sender):
     except Exception as error:
         # No imprimir datos personales ni credenciales.
         print("Error guardando solicitud:", type(error).__name__)
+        return None
+
+
+def guardar_solicitud_multiple(items, ciudad, sender):
+    """Guarda encabezado y renglones juntos; nunca deja un pedido a medias."""
+    if not almacenamiento_configurado() or not items or len(items) > 20:
+        return None
+
+    telefono = "52" + sender[3:] if re.fullmatch(r"521\d{10}", sender) else sender
+    folio = f"CAR-{datetime.now(timezone.utc):%Y%m%d}-{secrets.token_hex(5).upper()}"
+    if len(items) == 1:
+        nombre = items[0]["nombre"]
+        ref = items[0]["ref"]
+    else:
+        nombre = f"COTIZACIÓN CON {len(items)} PRODUCTOS"
+        ref = ""
+    cantidad = sum(item["cantidad"] for item in items)
+
+    try:
+        with psycopg.connect(
+            DATABASE_URL, connect_timeout=8, sslmode="require"
+        ) as conexion:
+            with conexion.cursor() as cursor:
+                cursor.execute("SET LOCAL ROLE carnevali_rw")
+                cursor.execute(
+                    """
+                    INSERT INTO solicitudes_cotizacion
+                    (folio, producto, referencia, cantidad, ciudad, telefono)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (folio, nombre, ref, cantidad, ciudad, telefono)
+                )
+                for posicion, item in enumerate(items, 1):
+                    cursor.execute(
+                        """
+                        INSERT INTO solicitudes_cotizacion_items
+                        (folio, posicion, producto, referencia, cantidad)
+                        VALUES (%s, %s, %s, %s, %s)
+                        """,
+                        (
+                            folio, posicion, item["nombre"],
+                            item["ref"], item["cantidad"]
+                        )
+                    )
+        return folio
+    except Exception as error:
+        # La transacción se revierte; no se registra folio parcial.
+        print("Error guardando carrito:", type(error).__name__)
         return None
 
 
@@ -614,6 +664,15 @@ def flujo_cotizacion(texto, sender):
 def preparar_respuesta(texto, sender=None):
     texto_limpio = normalizar(texto.strip())
 
+    # Carrito experimental: desactivado en producción hasta migrar Neon.
+    if sender and CARRITO_MULTIPRODUCTO:
+        respuesta_carrito = manejar_carrito(
+            sender, texto, buscar_productos, obtener_terminos,
+            guardar_solicitud_multiple, almacenamiento_configurado
+        )
+        if respuesta_carrito is not None:
+            return respuesta_carrito
+
     if sender:
         respuesta_cotizacion = flujo_cotizacion(texto, sender)
         if respuesta_cotizacion is not None:
@@ -828,6 +887,21 @@ def panel_ventas():
                     parametros + [limite, (pagina - 1) * limite]
                 )
                 solicitudes = cursor.fetchall()
+                detalles_por_folio = {}
+                if CARRITO_MULTIPRODUCTO and solicitudes:
+                    cursor.execute(
+                        """
+                        SELECT folio, posicion, producto, referencia, cantidad
+                        FROM solicitudes_cotizacion_items
+                        WHERE folio = ANY(%s)
+                        ORDER BY folio, posicion
+                        """,
+                        ([fila[0] for fila in solicitudes],)
+                    )
+                    for item_folio, _, item_nombre, item_ref, item_cantidad in cursor.fetchall():
+                        detalles_por_folio.setdefault(item_folio, []).append(
+                            (item_nombre, item_ref, item_cantidad)
+                        )
     except Exception as error:
         print("Error consultando panel:", type(error).__name__)
         return _cabeceras_privadas(Response(
@@ -855,6 +929,15 @@ def panel_ventas():
     tarjetas_movil = []
     for folio, producto, referencia, cantidad, ciudad, telefono, estado, fecha in solicitudes:
         etiqueta = ESTADOS_VENTAS.get(estado, e(estado))
+        detalle = detalles_por_folio.get(folio, [])
+        lista_items = ""
+        if detalle:
+            lista_items = '<ul class="items-detalle">' + "".join(
+                f'<li><span>{e(nombre)}'
+                + (f' <small>({e(ref)})</small>' if ref else "")
+                + f'</span><b>{e(piezas)} pzas.</b></li>'
+                for nombre, ref, piezas in detalle
+            ) + '</ul>'
         opciones = []
         for k, nombre in ESTADOS_VENTAS.items():
             marcado = " selected" if estado == k else ""
@@ -891,6 +974,7 @@ def panel_ventas():
             '</div>'
             f'<h3>{e(producto)}</h3>'
             f'<div class="muted">Referencia: {e(referencia)}</div>'
+            + lista_items +
             '<dl class="detalles">'
             f'<div><dt>Piezas</dt><dd>{e(cantidad)}</dd></div>'
             f'<div><dt>Destino</dt><dd>{e(ciudad)}</dd></div>'
@@ -905,7 +989,7 @@ def panel_ventas():
         filas.append(
             '<tr>'
             f'<td><b>{e(folio)}</b><div class="muted">{e(_formato_fecha_ventas(fecha))}</div></td>'
-            f'<td>{e(producto)}<div class="muted">Ref: {e(referencia)}</div></td>'
+            f'<td>{e(producto)}<div class="muted">Ref: {e(referencia)}</div>' + lista_items + '</td>'
             f'<td class="numero">{e(cantidad)}</td>'
             f'<td>{e(ciudad)}</td>'
             f'<td><a href="https://wa.me/{e(telefono)}" '
@@ -997,6 +1081,10 @@ def panel_ventas():
       letter-spacing:.08em;color:#64738a;margin-bottom:4px}
     .solicitud-card h3{font-size:17px;line-height:1.35;margin:18px 0 4px}
     .solicitud-card .chip{flex-shrink:0;font-size:11px}
+    .items-detalle{list-style:none;margin:12px 0 0;padding:0;border-top:1px solid #eef0f4}
+    .items-detalle li{display:flex;justify-content:space-between;gap:8px;padding:8px 0;
+      border-bottom:1px solid #eef0f4;font-size:12px}
+    .items-detalle b{white-space:nowrap}.items-detalle small{color:#667587}
     .detalles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
       gap:12px;margin:16px 0}
     .detalles div:last-child{grid-column:1/-1}
