@@ -226,11 +226,15 @@ class FlujoTests(unittest.TestCase):
         responder("COTIZAR")
         opciones = responder("Quiero 500 estuches para pulseras, 50 estuches de collares y 20 estuches de anillos")
         self.assertIn("4013", opciones)
-        self.assertIn("COL-REAL", opciones)
         self.assertNotIn("CARTON", opciones)
-        self.assertIn("570 piezas", opciones)
-        # Si solo hay un modelo coincidente por cada rubro, el sistema
-        # los agrega automáticamente tras validar su referencia real.
+        # Cada referencia debe ser elegida, aunque solo haya una coincidencia.
+        siguiente = responder("1")
+        self.assertIn("COL-REAL", siguiente)
+        self.assertNotIn("CARTON", siguiente)
+        ultima = responder("1")
+        self.assertIn("1821", ultima)
+        resumen = responder("1")
+        self.assertIn("570 piezas", resumen)
         self.assertEqual(
             [p["cantidad"] for p in carrito_flujo.SESIONES["5218123456789"]["items"]],
             [500, 50, 20]
