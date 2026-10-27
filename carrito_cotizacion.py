@@ -34,8 +34,12 @@ def extraer_lotes(texto):
     """
     limpio = texto.strip()
     limpio = re.sub(
-        r"^(?:(?:yo\s+)?(?:quiero|quisiera|necesito|me\s+gustaria)\s+)?"
-        r"(?:cotizar|cotizacion\s+de|pedir|agregar|agrega|anadir|añadir)\s*",
+        r"^(?:yo\s+)?(?:quiero|quisiera|necesito|me\s+gustaria|me\s+gustaría)\s+",
+        "", limpio, flags=re.I
+    ).strip()
+    limpio = re.sub(
+        r"^(?:cotizar|cotizacion\s+de|cotización\s+de|pedir|"
+        r"agregar|agrega|anadir|añadir)\s*",
         "", limpio, flags=re.I
     ).strip()
     limpio = re.sub(r"^(?:de|para|unas?|unos?|las?|los?)\s+", "", limpio, flags=re.I)
