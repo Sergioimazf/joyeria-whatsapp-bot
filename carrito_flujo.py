@@ -355,6 +355,9 @@ def _iniciar_busqueda(estado, texto, buscar, obtener_terminos):
         return _buscar_producto(estado, lotes[0]["descripcion"], buscar, obtener_terminos)
     estado.pop("cantidad_sugerida", None)
     estado.pop("pendientes", None)
+    # «Agrégame 200 cajas» no debe convertirse en «me 200 cajas».
+    if re.match(r"^(?:agregame|agrégame|anademe|añademe)\\b", texto.strip(), re.I):
+        return _buscar_producto(estado, texto, buscar, obtener_terminos)
     descripcion = re.sub(
         r"^(?:(?:quiero|quisiera|necesito)\s+)?"
         r"(?:cotizar|cotizacion|cotizaciones|cotizame|presupuesto|carrito|agregar|agrega|añadir|anadir)\s*",
