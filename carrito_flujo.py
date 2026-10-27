@@ -235,7 +235,7 @@ def _seleccionar_producto(estado, producto, buscar, obtener_terminos):
 
 
 def _elegir(estado, texto, buscar, obtener_terminos):
-    limpio = _norm(texto).strip()
+    limpio = _norm(texto).strip(" ¿?!.,")
     if re.search(r"\b(fotos?|fotografias?|imagenes?|imagen|ver fotos?)\b", limpio):
         return (
             "Todavía no tengo fotografías verificadas para mandar por WhatsApp. "
@@ -469,7 +469,10 @@ def manejar_carrito(sender, texto, buscar, obtener_terminos, guardar, disponible
         if limpio in {"quitar", "eliminar", "borrar", "quiero quitar"}:
             estado["paso"] = "quitar_numero"
             return "¿Cuál número de producto quieres quitar? Por ejemplo: 3."
-        if limpio.startswith(("agregar ", "agrega ", "anadir ", "añadir ")) or extraer_lotes(texto):
+        if re.match(
+            r"^(?:quiero\s+)?(?:agregar|agrega|agregame|anadir|añadir|anademe)\s+",
+            limpio
+        ) or extraer_lotes(texto):
             return _iniciar_busqueda(estado, texto, buscar, obtener_terminos)
         quitar = re.fullmatch(r"(?:quiero\s+)?(?:quitar|quitas|eliminar|borrar)\s+(?:el\s+)?(\d{1,2})", limpio)
         if quitar:
