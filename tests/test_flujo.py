@@ -83,5 +83,41 @@ class FlujoTests(unittest.TestCase):
         self.assertEqual(self.guardados, [])
 
 
+    def test_inicio_generico_pide_producto(self):
+        for inicio in ("cotizar", "quiero cotizar", "cotizacion", "carrito"):
+            carrito_flujo.SESIONES.clear()
+            texto = self.responder(inicio)
+            self.assertIn("¿Qué producto", texto)
+            self.assertNotIn("No encontré", texto)
+            opcion = self.responder("cajas para anillos")
+            self.assertIn("1481.NB", opcion)
+
+    def test_cualquier_cantidad_valida(self):
+        for cantidad in (1, 20, 37, 125, 750, 100000):
+            carrito_flujo.SESIONES.clear()
+            respuesta = self.responder(f"cotizar {cantidad} 1481.NB")
+            self.assertIn(f"{cantidad} piezas", respuesta)
+            self.assertIn("1481.NB", respuesta)
+
+    def test_recuperar_producto_no_encontrado_en_lote(self):
+        self.responder("cotizar 100 cajas para anillos y 20 producto inexistente")
+        sin_catalogo = self.responder("1")
+        self.assertIn("No encontré", sin_catalogo)
+        # Debe recordar las 20 piezas mientras se aclara el segundo producto.
+        busqueda = self.responder("cajas para collares")
+        self.assertIn("3020.NG", busqueda)
+        respuesta = self.responder("1")
+        self.assertIn("100 piezas", respuesta)
+        self.assertIn("20 piezas", respuesta)
+
+    def test_no_guardar_sin_confirmar(self):
+        self.responder("cotizar 100 1481.NB")
+        self.responder("LISTO")
+        self.responder("Monterrey")
+        respuesta = self.responder("OK")
+        self.assertIn("CONFIRMAR", respuesta)
+        self.assertEqual(self.guardados, [])
+
+
 if __name__ == "__main__":
     unittest.main()
