@@ -205,5 +205,101 @@ class FlujoTests(unittest.TestCase):
         self.responder("CONFIRMAR")
         self.assertEqual([i["cantidad"] for i in self.guardados[0][0]], [98, 15])
 
+    def test_pedido_500_50_20_y_orden_combinada(self):
+        catalogo = [
+            {"label": "ESTUCHE PARA PULSERA BLANCO", "ref": "4013"},
+            {"label": "CARTON 6 CADENAS COLLARES VELOUR", "ref": "4812"},
+            {"label": "EXHIBIDOR 12 COLLARES", "ref": "5710"},
+            {"label": "ESTUCHE PARA COLLAR NEGRO", "ref": "COL-REAL"},
+            {"label": "ESTUCHE PARA ANILLO AZUL", "ref": "1821"},
+        ]
+        def buscar_filtrado(terminos, limite=100):
+            return [
+                p for p in catalogo
+                if all(t in (p["label"] + " " + p["ref"]).lower() for t in terminos)
+            ][:limite]
+        def responder(s):
+            return manejar_carrito(
+                "5218123456789", s, buscar_filtrado,
+                carrito_flujo._terminos, self.guardar, lambda: True
+            )
+        responder("COTIZAR")
+        opciones = responder("Quiero 500 estuches para pulseras, 50 estuches de collares y 20 estuches de anillos")
+        self.assertIn("4013", opciones)
+        self.assertNotIn("CARTON", opciones)
+        # Cada referencia debe ser elegida, aunque solo haya una coincidencia.
+        siguiente = responder("1")
+        self.assertIn("COL-REAL", siguiente)
+        self.assertNotIn("CARTON", siguiente)
+        ultima = responder("1")
+        self.assertIn("1821", ultima)
+        resumen = responder("1")
+        self.assertIn("570 piezas", resumen)
+        self.assertEqual(
+            [p["cantidad"] for p in carrito_flujo.SESIONES["5218123456789"]["items"]],
+            [500, 50, 20]
+        )
+        mostrar = responder("que productos son?")
+        self.assertIn("570 piezas", mostrar)
+        quita = responder("Quiero quitar el 3 y agregar otro")
+        self.assertIn("¿Qué nuevo producto", quita)
+        self.assertEqual(sum(x["cantidad"] for x in carrito_flujo.SESIONES["5218123456789"]["items"]), 550)
+        busca = responder("Quiero 200 cajas para aretes")
+        self.assertIn("No encontré", busca)
+        self.assertIn("550 piezas", responder("VER"))
+
+    def test_pedir_fotos_no_cambia_la_seleccion(self):
+        self.responder("COTIZAR")
+        self.responder("100 cajas para anillos")
+        r = self.responder("Quiero ver fotos para elegir")
+        self.assertIn("fotografías verificadas", r)
+        self.assertIn("1481.NB", r)
+        self.assertEqual(carrito_flujo.SESIONES["5218123456789"]["paso"], "elegir")
+        self.assertEqual(carrito_flujo.SESIONES["5218123456789"]["cantidad_sugerida"], 100)
+
+    def test_numero_en_frase_de_cantidad(self):
+        self.responder("COTIZAR")
+        self.responder("cajas para anillos")
+        self.responder("1")
+        r = self.responder("Ya me preguntaste pero 200")
+        self.assertIn("200 piezas", r)
+
+    def test_quitar_solo_pide_numero(self):
+        self.responder("cotizar 100 1481.NB")
+        self.responder("agregar 50 1481.PK")
+        r = self.responder("Quitar")
+        self.assertIn("¿Cuál número", r)
+        r2 = self.responder("2")
+        self.assertIn("Quité", r2)
+        self.assertIn("100 piezas", r2)
+        self.assertNotIn("1481.PK", r2)
+
+    def test_busqueda_con_uso_corrige_modelo(self):
+        self.responder("COTIZAR")
+        self.responder("estuches para anillos")
+        r = self.responder("Pero ocupo para aretes")
+        self.assertIn("No encontré", r)
+        # No seleccionó accidentalmente una caja para anillos.
+        self.assertEqual(carrito_flujo.SESIONES["5218123456789"]["items"], [])
+
+
+    def test_agregame_con_cantidad_en_carrito(self):
+        self.responder("COTIZAR 100 1481.NB")
+        r = self.responder("Agrégame 200 cajas para anillos")
+        self.assertIn("1481.NB", r)
+        self.assertEqual(carrito_flujo.SESIONES["5218123456789"]["cantidad_sugerida"], 200)
+        r = self.responder("1")
+        self.assertIn("300 piezas", r)
+
+    def test_pregunta_con_signos_en_opciones(self):
+        self.responder("COTIZAR")
+        self.responder("cajas para anillos")
+        r = self.responder("¿Qué productos son?")
+        self.assertIn("nombres exactos", r)
+        r = self.responder("¿Puedo ver fotos?")
+        self.assertIn("fotografías verificadas", r)
+        self.assertEqual(carrito_flujo.SESIONES["5218123456789"]["paso"], "elegir")
+
+
 if __name__ == "__main__":
     unittest.main()

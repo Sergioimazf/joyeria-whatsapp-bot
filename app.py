@@ -87,7 +87,7 @@ def buscar_productos(terminos=None, limite=10):
         # Terminos de letras/numeros solamente: no insertamos texto
         # arbitrario del cliente en el filtro de Dolibarr.
         seguros = [
-            re.sub(r"[^a-z0-9]", "", t)[:32]
+            re.sub(r"[^a-z0-9._-]", "", t)[:32]
             for t in terminos
         ]
         seguros = [t for t in seguros if t]
@@ -680,7 +680,8 @@ def preparar_respuesta(texto, sender=None):
                 "Puedes salir cuando quieras con SALIR PRUEBA."
             )
         if sender in CARRITO_TESTERS and texto_limpio in {
-            "salir prueba", "terminar prueba"
+            "salir prueba", "terminar prueba", "finalizar prueba",
+            "acabar prueba", "cerrar prueba"
         }:
             CARRITO_TESTERS.discard(sender)
             SESIONES_CARRITO.pop(sender, None)
