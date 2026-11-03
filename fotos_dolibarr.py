@@ -53,20 +53,40 @@ def verificar_fotos(referencia, api_url, api_key, http=requests):
             params={"modulepart": "product", "id": int(identificador), "limit": 100},
             timeout=8,
         )
+        # El 404 de /documents es ambiguo: puede significar que no hay
+        # archivos, que la instancia no encuentra el directorio o que
+        # el objeto no se resolvió. Repetir por referencia oficial ayuda
+        # a diagnosticar sin inferir que no existen fotos.
+        ruta = "id"
+        if archivos_respuesta.status_code == 404:
+            archivos_respuesta = http.get(
+                f"{url}/documents",
+                headers=headers,
+                params={"modulepart": "product", "ref": ref_real, "limit": 100},
+                timeout=8,
+            )
+            ruta = "referencia"
         if archivos_respuesta.status_code == 403:
             return (
-                f"Encontré {nombre} (Ref: {ref_real}), pero la API "
-                "no tiene permiso para consultar sus documentos."
+                f"Encontré {nombre} (Ref: {ref_real}), pero Dolibarr "
+                "rechazó consultar sus documentos (403). "
+                "Necesitamos comprobar los permisos de la API."
             )
         if archivos_respuesta.status_code == 404:
             return (
-                f"Encontré {nombre} (Ref: {ref_real}), pero la API "
-                "no devolvió fotografías adjuntas para esta ficha."
+                f"Encontré {nombre} (Ref: {ref_real}). "
+                "La API de documentos respondió 404 tanto por ID como "
+                "por referencia. Esto NO prueba que el producto no tenga "
+                "fotos: podría deberse a su ubicación o configuración "
+                "en Dolibarr. Revisa la pestaña Imágenes/Archivos "
+                "adjuntos de ese producto."
             )
         if archivos_respuesta.status_code != 200:
             return (
                 f"Encontré {nombre} (Ref: {ref_real}), "
-                "pero falló la consulta de documentos de Dolibarr."
+                f"pero la API de documentos respondió "
+                f"{archivos_respuesta.status_code} por {ruta}. "
+                "No se ha confirmado el acceso a fotografías."
             )
 
         archivos = archivos_respuesta.json()
