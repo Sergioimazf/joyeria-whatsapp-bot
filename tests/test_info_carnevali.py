@@ -74,6 +74,17 @@ class PoliticasTests(unittest.TestCase):
         self.assertIn("no siempre", r)
         self.assertIn("confirmar disponibilidad", r)
 
+    def test_recoger_en_sucursal_no_solo_muestra_ubicaciones(self):
+        r = responder_pregunta_frecuente("¿Puedo recoger en sucursal?")
+        self.assertIn("recoger tu compra", r)
+        self.assertIn("coordinarse con ventas", r)
+
+    def test_preguntas_de_ventas_y_pedidos_no_redirigen_al_catalogo(self):
+        r = responder_pregunta_frecuente("Necesito hablar con ventas en sucursal")
+        self.assertIn("equipo de ventas", r)
+        r = responder_pregunta_frecuente("¿Cuándo llega mi pedido?")
+        self.assertIn("no consulta estados de pedidos", r)
+
     def test_atencion_humana_no_inventa_whatsapp(self):
         r = responder_pregunta_frecuente("Quiero hablar con una vendedora")
         self.assertIn("carnevaliestuches.com", r)
