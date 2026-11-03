@@ -52,7 +52,7 @@ def normalizar(texto):
 def _sucursal(texto):
     if any(t in texto for t in ("plaza mexico", "plaza méxico", "plaza méjico")):
         return "plaza"
-    if re.search(r"\b(matriz|juan mendez|mendez|centro)\b", texto):
+    if re.search(r"\b(matriz|juan mendez|mendez)\b", texto):
         return "matriz"
     if re.search(r"\b(valle|santorini|mississippi|san pedro)\b", texto):
         return "valle"
@@ -116,6 +116,9 @@ def responder_pregunta_frecuente(texto):
     if consulta_sucursal or n in {"valle", "matriz", "plaza mexico"}:
         if sucursal:
             return _detalle_sucursal(sucursal)
+        if re.search(r"\bcentro\b", n):
+            return ("Tenemos dos sucursales en el Centro de Monterrey:\n\n"
+                    + _detalle_sucursal("matriz") + "\n\n" + _detalle_sucursal("plaza"))
         return "Estas son nuestras tres sucursales en Monterrey:\n\n" + _listado_sucursales()
 
     if tiene("reclamo", "reclamos", "dano", "danado", "danada", "danados",
