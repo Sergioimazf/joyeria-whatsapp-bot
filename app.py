@@ -1,6 +1,7 @@
 
 from flask import Flask, request, Response, redirect, url_for
 from carrito_flujo import manejar_carrito, SESIONES as SESIONES_CARRITO
+from fotos_dolibarr import verificar_fotos
 import requests
 import os
 import re
@@ -688,6 +689,19 @@ def preparar_respuesta(texto, sender=None):
             return (
                 "Modo de prueba desactivado. "
                 "Puedes seguir usando la atención habitual."
+            )
+
+    # Diagnóstico fotográfico: únicamente números inscritos en modo de
+    # pruebas. No descarga ni envía imágenes, y conserva el carrito actual.
+    if sender and CARRITO_MODO_PRUEBA and sender in CARRITO_TESTERS:
+        pedido_foto = re.fullmatch(
+            r"foto\\s+([A-Za-z0-9._-]{2,70})",
+            texto.strip(),
+            flags=re.IGNORECASE
+        )
+        if pedido_foto:
+            return verificar_fotos(
+                pedido_foto.group(1), DOLIBARR_URL, DOLIBARR_API_KEY
             )
 
     if sender and CARRITO_MULTIPRODUCTO and (
