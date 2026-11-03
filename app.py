@@ -695,7 +695,7 @@ def preparar_respuesta(texto, sender=None):
     # pruebas. No descarga ni envía imágenes, y conserva el carrito actual.
     if sender and CARRITO_MODO_PRUEBA and sender in CARRITO_TESTERS:
         pedido_foto = re.fullmatch(
-            r"foto\\s+([A-Za-z0-9._-]{2,70})",
+            r"foto\s+([A-Za-z0-9._-]{2,70})",
             texto.strip(),
             flags=re.IGNORECASE
         )
