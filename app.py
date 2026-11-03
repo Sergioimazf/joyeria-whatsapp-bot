@@ -4,6 +4,7 @@ from carrito_flujo import manejar_carrito, SESIONES as SESIONES_CARRITO
 from fotos_dolibarr import verificar_fotos
 from carnevali_info import responder_pregunta_frecuente as respuestas_oficiales, es_consulta_independiente
 from ficha_dolibarr import consultar_ficha
+from openai_intenciones import clasificar_pregunta, PREGUNTA_CANONICA
 import requests
 import os
 import re
@@ -29,6 +30,10 @@ PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 
 DOLIBARR_URL = "https://carnevali.dolibarrmnet.com/api/index.php"
 DOLIBARR_API_KEY = os.getenv("DOLIBARR_API_KEY")
+# La IA no se activa sin autorización y clave de API independiente.
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+IA_CARNEVALI_MODO = os.getenv("IA_CARNEVALI_MODO", "apagado").strip().lower()
 DATABASE_URL = os.getenv("DATABASE_URL")
 SALES_VIEW_PASSWORD = os.getenv("SALES_VIEW_PASSWORD")
 CARRITO_CONFIG = os.getenv("CARRITO_MULTIPRODUCTO", "0").strip().lower()
@@ -623,6 +628,23 @@ def preparar_respuesta(texto, sender=None):
     frecuente = responder_pregunta_frecuente(texto)
     if frecuente is not None:
         return frecuente
+
+    # IA opcional: solo identifica una categoría cuando las reglas no
+    # entendieron el mensaje. Nunca modifica carritos, cobra ni responde
+    # libremente: las políticas provienen de la base oficial.
+    if (
+        sender and CARRITO_MODO_PRUEBA and sender in CARRITO_TESTERS
+        and IA_CARNEVALI_MODO == "pruebas" and OPENAI_API_KEY
+        and sender not in SESIONES_CARRITO and sender not in COTIZACIONES
+    ):
+        categoria = clasificar_pregunta(
+            texto, OPENAI_API_KEY, OPENAI_MODEL
+        )
+        pregunta_oficial = PREGUNTA_CANONICA.get(categoria)
+        if pregunta_oficial:
+            respuesta_ia_segura = responder_pregunta_frecuente(pregunta_oficial)
+            if respuesta_ia_segura is not None:
+                return respuesta_ia_segura
 
     if texto_limpio in {"productos", "producto", "catalogo"}:
         productos = buscar_productos(limite=5)
