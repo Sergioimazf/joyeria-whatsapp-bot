@@ -25,6 +25,6 @@ jobs:
       - name: Instalar dependencias para pruebas locales
         run: pip install -r requirements.txt
       - name: Verificar sintaxis
-        run: python -m compileall -q app.py carrito_cotizacion.py carrito_flujo.py fotos_dolibarr.py
+        run: python -m compileall -q app.py carrito_cotizacion.py carrito_flujo.py fotos_dolibarr.py carnevali_info.py ficha_dolibarr.py
       - name: Ejecutar pruebas
         run: python -m unittest discover -s tests -v
