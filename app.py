@@ -2,6 +2,8 @@
 from flask import Flask, request, Response, redirect, url_for
 from carrito_flujo import manejar_carrito, SESIONES as SESIONES_CARRITO
 from fotos_dolibarr import verificar_fotos
+from carnevali_info import responder_pregunta_frecuente as respuestas_oficiales, es_consulta_independiente
+from ficha_dolibarr import consultar_ficha
 import requests
 import os
 import re
@@ -136,134 +138,8 @@ def buscar_productos(terminos=None, limite=10):
 
 
 def responder_pregunta_frecuente(texto):
-    """Respuestas simples; no confirma precios ni existencias."""
-    palabras = set(re.findall(r"[a-z0-9]+", normalizar(texto)))
-
-    def menciona(*opciones):
-        return bool(palabras.intersection(opciones))
-
-    # Si piden una persona, no prometemos transferencias automaticas.
-    if menciona("asesor", "asesora", "humano", "humana", "vendedor", "vendedora"):
-        return (
-            "Con gusto te orientamos. Si necesitas atencion de ventas, "
-            "puedes consultar los canales de contacto en "
-            "https://carnevaliestuches.com. "
-            "Este bot aun no transfiere conversaciones automaticamente."
-        )
-
-    if menciona(
-        "horario", "horarios", "abren", "cierran", "abierto",
-        "abierta", "sabado", "domingos", "domingo"
-    ):
-        return (
-            "Nuestro horario habitual es de lunes a viernes de "
-            "10:00 a.m. a 6:30 p.m., y sabados de 10:00 a.m. "
-            "a 2:00 p.m. Te recomendamos confirmar el horario "
-            "de la sucursal que visitaras."
-        )
-
-    if menciona(
-        "sucursal", "sucursales", "ubicacion", "ubicaciones",
-        "direccion", "direcciones", "ubicados", "donde",
-        "tiendas", "locales"
-    ):
-        return (
-            "Contamos con puntos de atencion en Centro de Monterrey, "
-            "zona Del Valle en San Pedro y Plaza Mexico. "
-            "Para confirmar la direccion de la sucursal que "
-            "te interesa, consulta https://carnevaliestuches.com."
-        )
-
-    if menciona(
-        "envio", "envios", "enviar", "envian", "paqueteria",
-        "entrega", "entregas", "mandan", "foraneo", "foraneos"
-    ):
-        # No repetir la pregunta por la ciudad si ya la mencionaron.
-        destinos = {
-            "guadalajara": "Guadalajara",
-            "monterrey": "Monterrey",
-            "puebla": "Puebla",
-            "queretaro": "Querétaro",
-            "saltillo": "Saltillo",
-            "merida": "Mérida",
-            "tijuana": "Tijuana",
-            "cancun": "Cancún",
-            "chihuahua": "Chihuahua",
-            "cdmx": "Ciudad de México",
-            "ciudad de mexico": "Ciudad de México",
-            "mexico df": "Ciudad de México",
-        }
-        texto_normalizado = normalizar(texto)
-        destino = next((
-            nombre for palabra, nombre in destinos.items()
-            if re.search(r"\b" + re.escape(palabra) + r"\b",
-                         texto_normalizado)
-        ), None)
-
-        if destino:
-            return (
-                f"¡Claro! 📦 Anotado: envío a {destino}. "
-                "Hacemos envíos nacionales; el costo y tiempo se "
-                "confirman según el pedido. "
-                "¿Qué producto y cuántas piezas necesitas?"
-            )
-
-        return (
-            "Si, realizamos envios nacionales en Mexico. 📦 "
-            "El costo depende del destino y del volumen del pedido. "
-            "El tiempo de entrega se confirma segun el pedido. "
-            "¿A que ciudad te gustaria que enviemos?"
-        )
-
-    if menciona(
-        "personalizar", "personalizado", "personalizada",
-        "personalizados", "personalizadas", "personalizacion",
-        "logo", "logotipo", "grabado", "impresion"
-    ):
-        return (
-            "Podemos revisar opciones de personalizacion de "
-            "estuches con tu logotipo. ✨ "
-            "Dinos que tipo de estuche necesitas y cuantas piezas "
-            "buscas. Disponibilidad, costo y detalles de "
-            "personalizacion deben confirmarse con ventas."
-        )
-
-    if menciona(
-        "cotizacion", "cotizaciones", "cotizar", "cotizame",
-        "presupuesto", "precio", "precios", "cuesta", "cuestan",
-        "costo", "costos", "mayoreo", "mayorista"
-    ):
-        return (
-            "Con gusto te orientamos para cotizar. "
-            "Indicanos el producto o codigo de referencia y "
-            "cuantas piezas necesitas. "
-            "Por ahora el bot no confirma precios ni envia "
-            "cotizaciones automaticamente. Para solicitar "
-            "atencion de ventas, consulta https://carnevaliestuches.com."
-        )
-
-    if menciona(
-        "pedido", "pedidos", "orden", "ordenes",
-        "seguimiento", "rastreo", "rastrear", "pago",
-        "pagos", "factura", "facturacion"
-    ):
-        return (
-            "Para consultar el estado de tu pedido, pago o factura "
-            "necesitas atencion del equipo de ventas. "
-            "Este bot todavia no consulta pedidos de Shopify. "
-            "Puedes encontrar canales de contacto en "
-            "https://carnevaliestuches.com."
-        )
-
-    if menciona("comprar", "compra", "compro", "compras", "tienda", "online"):
-        return (
-            "Puedes explorar nuestra tienda en linea en "
-            "https://carnevaliestuches.com. "
-            "Si buscas algo especifico, escribeme el nombre "
-            "o referencia y te ayudo a encontrarlo en el catalogo."
-        )
-
-    return None
+    """Fuente única de políticas: información facilitada por Carnevali."""
+    return respuestas_oficiales(texto)
 
 
 # Memoria temporal por remitente para pruebas de cotizacion.
@@ -703,6 +579,24 @@ def preparar_respuesta(texto, sender=None):
             return verificar_fotos(
                 pedido_foto.group(1), DOLIBARR_URL, DOLIBARR_API_KEY
             )
+
+    # FICHA por referencia exacta: consulta de solo lectura a Dolibarr.
+    # Se puede consultar sin alterar el carrito ni crear pedidos.
+    ficha = re.fullmatch(
+        r"ficha\s+([A-Za-z0-9._-]{2,70})", texto.strip(),
+        flags=re.IGNORECASE
+    )
+    if ficha:
+        return consultar_ficha(ficha.group(1), DOLIBARR_URL, DOLIBARR_API_KEY)
+
+    # Dudas explícitas de negocio no deben consumir el siguiente paso
+    # de una cotización en marcha.
+    if sender and (
+        sender in SESIONES_CARRITO or sender in COTIZACIONES
+    ) and es_consulta_independiente(texto):
+        frecuente_en_carrito = responder_pregunta_frecuente(texto)
+        if frecuente_en_carrito is not None:
+            return frecuente_en_carrito
 
     if sender and CARRITO_MULTIPRODUCTO and (
         not CARRITO_MODO_PRUEBA or sender in CARRITO_TESTERS
