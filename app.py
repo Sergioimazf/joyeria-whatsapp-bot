@@ -625,7 +625,10 @@ def preparar_respuesta(texto, sender=None):
             "necesitas, por ejemplo: cajas para anillos."
         )
 
-    frecuente = responder_pregunta_frecuente(texto)
+    # PRODUCTOS es un comando explícito de búsqueda Dolibarr; no una FAQ.
+    # CATÁLOGO, en cambio, responde con la tienda en línea oficial.
+    mostrar_productos = texto_limpio in {"productos", "producto"}
+    frecuente = None if mostrar_productos else responder_pregunta_frecuente(texto)
     if frecuente is not None:
         return frecuente
 
