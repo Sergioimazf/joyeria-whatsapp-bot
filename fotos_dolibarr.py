@@ -69,8 +69,8 @@ def verificar_fotos(referencia, api_url, api_key, http=requests):
         if archivos_respuesta.status_code == 403:
             return (
                 f"Encontré {nombre} (Ref: {ref_real}), pero Dolibarr "
-                "rechazó consultar sus documentos (403). "
-                "Necesitamos comprobar los permisos de la API."
+                "no tiene permiso para consultar sus documentos (403), "
+                "o el acceso está restringido. Revisa los permisos de la API."
             )
         if archivos_respuesta.status_code == 404:
             return (
