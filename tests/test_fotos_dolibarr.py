@@ -74,6 +74,40 @@ class FotosDolibarrTests(unittest.TestCase):
         r = verificar_fotos(self.ref, self.url, "token_de_prueba", http)
         self.assertIn("no tiene permiso", r)
 
+    def test_404_por_id_y_por_referencia_no_asegura_ausencia_de_fotos(self):
+        http = Mock()
+        http.get.side_effect = [
+            respuesta(200, {"id": 58, "ref": self.ref, "label": "ESTUCHE ROJO"}),
+            respuesta(404),
+            respuesta(404),
+        ]
+        r = verificar_fotos(self.ref, self.url, "token_de_prueba", http)
+        self.assertIn("respondió 404", r)
+        self.assertIn("NO prueba", r)
+        self.assertEqual(http.get.call_count, 3)
+        self.assertEqual(http.get.call_args_list[2].kwargs["params"]["ref"], self.ref)
+
+    def test_404_por_id_reintenta_por_referencia_y_encuentra_fotos(self):
+        http = Mock()
+        http.get.side_effect = [
+            respuesta(200, {"id": 58, "ref": self.ref, "label": "ESTUCHE ROJO"}),
+            respuesta(404),
+            respuesta(200, [{"name": "frontal.jpg", "type": "file"}]),
+        ]
+        r = verificar_fotos(self.ref, self.url, "token_de_prueba", http)
+        self.assertIn("1 fotografía(s)", r)
+        self.assertEqual(http.get.call_count, 3)
+
+    def test_error_diferente_a_404_no_confunde_con_faltan_fotos(self):
+        http = Mock()
+        http.get.side_effect = [
+            respuesta(200, {"id": 58, "ref": self.ref, "label": "ESTUCHE ROJO"}),
+            respuesta(503),
+        ]
+        r = verificar_fotos(self.ref, self.url, "token_de_prueba", http)
+        self.assertIn("503", r)
+        self.assertNotIn("no devolvió fotografías", r)
+
     def test_referencia_no_valida_no_llama_api(self):
         http = Mock()
         r = verificar_fotos("../secreto", self.url, "token_de_prueba", http)
