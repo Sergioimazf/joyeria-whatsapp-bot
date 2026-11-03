@@ -281,7 +281,7 @@ def es_consulta_independiente(texto):
     )
     tema = re.search(
         r"\b(?:horarios?|sucursales?|direcciones?|ubicaciones?|"
-        r"telefonos?|mayoreo|menudeo|descuentos?|precios?|"
+        r"telefonos?|cierra|cierran|abre|abren|valle|matriz|plaza|mayoreo|menudeo|descuentos?|precios?|"
         r"costos?|cuesta|envios?|entregas?|fletes?|"
         r"paqueterias?|personalizacion|serigrafia|"
         r"hotstamping|logo|impresion|pagos?|pagar|paypal|"
