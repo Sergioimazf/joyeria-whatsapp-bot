@@ -76,6 +76,14 @@ class PoliticasCarnevaliTests(unittest.TestCase):
         self.assertIn("no siempre", r)
         self.assertIn("confirmar", r)
 
+    def test_donde_consultar_precios_o_catalogo_no_da_direcciones(self):
+        precios = responder("¿Dónde veo precios?")
+        self.assertIn("precios publicados", precios)
+        self.assertNotIn("Mississippi", precios)
+        catalogo = responder("¿Dónde puedo ver el catálogo?")
+        self.assertIn("carnevaliestuches.com", catalogo)
+        self.assertNotIn("Emilio Carranza", catalogo)
+
     def test_deriva_vendedora_sin_inventar_telefono_whatsapp(self):
         r = responder("Quiero hablar con una persona")
         self.assertIn("81 8374 0873", r)
@@ -113,6 +121,14 @@ class IntegracionCarnevaliTests(unittest.TestCase):
             r = app.preparar_respuesta("¿Cuál es el horario de Valle?", sender)
             self.assertIn("Mississippi 415-2", r)
             self.assertEqual(carrito_flujo.SESIONES[sender]["paso"], paso)
+
+    def test_comando_productos_usa_la_api_y_no_una_respuesta_generica(self):
+        with patch.object(app, "buscar_productos", return_value=[
+            {"label": "ESTUCHE ROJO", "ref": "3801.RD"}
+        ]) as buscar:
+            r = app.preparar_respuesta("PRODUCTOS", None)
+        self.assertIn("3801.RD", r)
+        buscar.assert_called_once()
 
     def test_politicas_disponibles_sin_activar_modo_pruebas(self):
         r = app.preparar_respuesta("¿Cuál es el horario de Plaza México?", "5218111111111")
