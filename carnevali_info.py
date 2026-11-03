@@ -141,7 +141,7 @@ def responder_pregunta_frecuente(texto):
         )
 
     if tiene("guia", "rastreo", "rastrear", "seguimiento", "estatus", "status") or (
-        tiene("pedido", "orden") and tiene("llego", "llegar", "estado", "donde")
+        tiene("pedido", "orden") and tiene("llego", "llega", "llegara", "llegar", "recibir", "salio", "estado", "donde")
     ):
         return (
             "Cuando se envía tu pedido, el equipo comparte la guía de "
