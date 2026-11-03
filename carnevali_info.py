@@ -102,8 +102,8 @@ def responder_pregunta_frecuente(texto):
             tiene("donde", "estado", "estatus", "status", "llego", "llega", "salio")):
         return (
             "Para rastrear un pedido, ventas comparte la guía de paquetería "
-            "cuando el envío se realiza. Este bot todavía no puede consultar "
-            "el estado del pedido en tiempo real. " + CONTACTO_VENTAS
+            "cuando el envío se realiza. Este bot aún "
+            "no consulta estados de pedidos en tiempo real. " + CONTACTO_VENTAS
         )
 
     sucursal = _sucursal(n)
@@ -115,7 +115,9 @@ def responder_pregunta_frecuente(texto):
     ) or "a que hora" in n or "numero de la" in n or bool(
         re.search(r"\bdonde\s+(?:estan|quedan|se\s+encuentran)\b", n)
     )
-    if consulta_sucursal or n in {"valle", "matriz", "plaza mexico"}:
+    if consulta_sucursal or n in {"valle", "matriz", "plaza mexico"} or (
+        sucursal and re.search(r"\b(donde|esta|queda|encuentro|visitar)\b", n)
+    ):
         if sucursal:
             return _detalle_sucursal(sucursal)
         if re.search(r"\bcentro\b", n):
@@ -219,6 +221,16 @@ def responder_pregunta_frecuente(texto):
             "iniciar la producción."
         )
 
+    if tiene("existencia", "existencias", "inventario", "stock", "disponible",
+             "disponibilidad", "agotado", "agotada"):
+        return (
+            "El inventario de Dolibarr puede mostrar existencias, pero "
+            "no siempre está actualizado en tiempo real. Ventas debe "
+            "confirmar disponibilidad antes del pago. Si no hay "
+            "suficientes piezas, podemos consultar un pedido especial "
+            "y su plazo de entrega."
+        )
+
     if tiene("tiempo", "tarda", "tardan", "tardaria", "dias", "paqueteria",
              "paqueterias", "flete", "fletes", "envio", "envios",
              "entrega", "entregas", "enviar", "envian", "recoger",
@@ -242,16 +254,6 @@ def responder_pregunta_frecuente(texto):
             "destino y producto. Manejamos distintas paqueterías según "
             "la preferencia del cliente. Ventas confirma el costo "
             "según peso y volumen; también puedes recoger en sucursal."
-        )
-
-    if tiene("existencia", "existencias", "inventario", "stock", "disponible",
-             "disponibilidad", "agotado", "agotada"):
-        return (
-            "El inventario de Dolibarr puede mostrar existencias, pero "
-            "no siempre está actualizado en tiempo real. Ventas debe "
-            "confirmar disponibilidad antes del pago. Si no hay "
-            "suficientes piezas, podemos consultar un pedido especial "
-            "y su plazo de entrega."
         )
 
     if tiene("precio", "precios", "costos", "costo", "cuesta", "cuestan"):
