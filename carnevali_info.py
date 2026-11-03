@@ -256,19 +256,38 @@ def responder_pregunta_frecuente(texto):
 
 
 def es_consulta_independiente(texto):
-    """En un carrito activo, contestar dudas sin consumir su selección.
+    """Permitir resolver dudas comerciales mientras se mantiene un carrito.
 
-    Solo preguntas explícitas; una respuesta como "a Guadalajara" no se
-    trata como una nueva consulta de envíos ni cambia el estado.
+    Una pregunta sobre el listado («¿qué productos son?») debe seguir
+    llegando al selector de modelos, no a una FAQ genérica.
     """
-    n = normalizar(texto).lstrip("¿¡!? ")
-    return bool(
-        re.match(
-            r"^(?:que|cual|cuales|como|cuando|donde|a que hora|"
-            r"tienen|manejan|hacen|aceptan|puedo|podria|cuanto|cuantos|"
-            r"cuantas|quiero hablar con|necesito un asesor|"
-            r"horario(?:s)?|ubicacion(?:es)?|direccion(?:es)?|"
-            r"telefono(?:s)?|metodos de pago|formas de pago)\b",
-            n,
-        )
+    n = normalizar(texto).lstrip("¿¡!? ").rstrip("¿¡!? .")
+    if n in {"que productos son", "que opciones son", "esto que es",
+             "cual quieres", "cuales son", "que modelo es"}:
+        return False
+    comandos = {
+        "horario", "horarios", "ubicacion", "ubicaciones",
+        "direccion", "direcciones", "telefonos", "telefono",
+        "envios", "envio", "formas de pago", "metodos de pago",
+        "mayoreo", "devoluciones", "facturacion",
+    }
+    if n in comandos:
+        return True
+    pregunta = re.match(
+        r"^(?:que|cual|cuales|como|cuando|donde|a que hora|"
+        r"tienen|manejan|hacen|aceptan|puedo|podria|cuanto|cuantos|"
+        r"cuantas|quiero saber|necesito un asesor|"
+        r"quiero hablar con|tienes|cuentan con)\b", n
     )
+    tema = re.search(
+        r"\b(?:horarios?|sucursales?|direcciones?|ubicaciones?|"
+        r"telefonos?|mayoreo|menudeo|descuentos?|precios?|"
+        r"costos?|cuesta|envios?|entregas?|fletes?|"
+        r"paqueterias?|personalizacion|serigrafia|"
+        r"hotstamping|logo|impresion|pagos?|pagar|paypal|"
+        r"facturas?|facturacion|devoluciones?|cambios?|"
+        r"garantia|garantias|rastreo|guias?|seguimiento|"
+        r"existencias?|inventario|stock|domingos?|sabados?|"
+        r"catalogo)\b", n
+    )
+    return bool(pregunta and tema)
