@@ -37,7 +37,9 @@ SUCURSALES = {
 CONTACTO_VENTAS = (
     "Para asesoría, cotizaciones y casos especiales, contacta al equipo "
     f"de ventas desde la página oficial: {WEB}. "
-    "También puedo compartirte los teléfonos de las sucursales. "
+    "Teléfonos de Matriz: 81 8374 0873 y 81 8374 4167; "
+    "puedes pedir los de otras sucursales. Estos son teléfonos publicados, "
+    "no números de WhatsApp verificados. "
     "La transferencia automática a un vendedor todavía no está habilitada."
 )
 
@@ -50,7 +52,7 @@ def normalizar(texto):
 def _sucursal(texto):
     if any(t in texto for t in ("plaza mexico", "plaza méxico", "plaza méjico")):
         return "plaza"
-    if re.search(r"\b(matriz|juan mendez|mendez|centro)\b", texto):
+    if re.search(r"\b(matriz|juan mendez|mendez)\b", texto):
         return "matriz"
     if re.search(r"\b(valle|santorini|mississippi|san pedro)\b", texto):
         return "valle"
@@ -95,22 +97,33 @@ def responder_pregunta_frecuente(texto):
             "coordinarse con ventas. Escribe UBICACIONES para conocerlas."
         )
 
+    # «¿Dónde va mi pedido?» es seguimiento, no la ubicación de una tienda.
+    if (tiene("pedido", "pedidos", "orden", "ordenes", "paquete") and
+            tiene("donde", "estado", "estatus", "status", "llego", "llega", "salio")):
+        return (
+            "Para rastrear un pedido, ventas comparte la guía de paquetería "
+            "cuando el envío se realiza. Este bot aún "
+            "no consulta estados de pedidos en tiempo real. " + CONTACTO_VENTAS
+        )
+
     sucursal = _sucursal(n)
     consulta_sucursal = tiene(
         "sucursal", "sucursales", "direccion", "direcciones", "ubicacion",
-        "ubicaciones", "ubican", "ubicados", "donde", "horario", "horarios",
+        "ubicaciones", "ubican", "ubicados", "horario", "horarios",
         "abren", "cierran", "abierto", "abierta", "sabado", "domingo",
-        "telefono", "telefonos", "local", "tiendas", "plaza"
-    ) or "a que hora" in n or "numero de la" in n
-    if consulta_sucursal or n in {"valle", "matriz", "plaza mexico"}:
+        "telefono", "telefonos", "locales", "plaza"
+    ) or "a que hora" in n or "numero de la" in n or bool(
+        re.search(r"\bdonde\s+(?:estan|quedan|se\s+encuentran)\b", n)
+    )
+    if consulta_sucursal or n in {"valle", "matriz", "plaza mexico"} or (
+        sucursal and re.search(r"\b(donde|esta|queda|encuentro|visitar)\b", n)
+    ):
         if sucursal:
             return _detalle_sucursal(sucursal)
+        if re.search(r"\bcentro\b", n):
+            return ("Tenemos dos sucursales en el Centro de Monterrey:\n\n"
+                    + _detalle_sucursal("matriz") + "\n\n" + _detalle_sucursal("plaza"))
         return "Estas son nuestras tres sucursales en Monterrey:\n\n" + _listado_sucursales()
-
-    if tiene("asesor", "asesora", "humano", "humana", "vendedor", "vendedora", "ventas") or any(
-        s in n for s in ("hablar con alguien", "hablar con una persona", "atencion humana")
-    ):
-        return CONTACTO_VENTAS
 
     if tiene("reclamo", "reclamos", "dano", "danado", "danada", "danados",
              "incompleto", "incompleta", "equivocado", "equivocada", "devolucion",
@@ -208,6 +221,16 @@ def responder_pregunta_frecuente(texto):
             "iniciar la producción."
         )
 
+    if tiene("existencia", "existencias", "inventario", "stock", "disponible",
+             "disponibilidad", "agotado", "agotada"):
+        return (
+            "El inventario de Dolibarr puede mostrar existencias, pero "
+            "no siempre está actualizado en tiempo real. Ventas debe "
+            "confirmar disponibilidad antes del pago. Si no hay "
+            "suficientes piezas, podemos consultar un pedido especial "
+            "y su plazo de entrega."
+        )
+
     if tiene("tiempo", "tarda", "tardan", "tardaria", "dias", "paqueteria",
              "paqueterias", "flete", "fletes", "envio", "envios",
              "entrega", "entregas", "enviar", "envian", "recoger",
@@ -231,16 +254,6 @@ def responder_pregunta_frecuente(texto):
             "destino y producto. Manejamos distintas paqueterías según "
             "la preferencia del cliente. Ventas confirma el costo "
             "según peso y volumen; también puedes recoger en sucursal."
-        )
-
-    if tiene("existencia", "existencias", "inventario", "stock", "disponible",
-             "disponibilidad", "agotado", "agotada"):
-        return (
-            "El inventario de Dolibarr puede mostrar existencias, pero "
-            "no siempre está actualizado en tiempo real. Ventas debe "
-            "confirmar disponibilidad antes del pago. Si no hay "
-            "suficientes piezas, podemos consultar un pedido especial "
-            "y su plazo de entrega."
         )
 
     if tiene("precio", "precios", "costos", "costo", "cuesta", "cuestan"):
