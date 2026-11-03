@@ -109,10 +109,12 @@ def responder_pregunta_frecuente(texto):
     sucursal = _sucursal(n)
     consulta_sucursal = tiene(
         "sucursal", "sucursales", "direccion", "direcciones", "ubicacion",
-        "ubicaciones", "ubican", "ubicados", "donde", "horario", "horarios",
+        "ubicaciones", "ubican", "ubicados", "horario", "horarios",
         "abren", "cierran", "abierto", "abierta", "sabado", "domingo",
-        "telefono", "telefonos", "local", "tiendas", "plaza"
-    ) or "a que hora" in n or "numero de la" in n
+        "telefono", "telefonos", "locales", "plaza"
+    ) or "a que hora" in n or "numero de la" in n or bool(
+        re.search(r"\bdonde\s+(?:estan|quedan|se\s+encuentran)\b", n)
+    )
     if consulta_sucursal or n in {"valle", "matriz", "plaza mexico"}:
         if sucursal:
             return _detalle_sucursal(sucursal)
