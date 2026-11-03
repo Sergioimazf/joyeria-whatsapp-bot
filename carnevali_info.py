@@ -81,6 +81,20 @@ def responder_pregunta_frecuente(texto):
     def tiene(*palabras_objetivo):
         return bool(palabras.intersection(palabras_objetivo))
 
+    # Estas intenciones deben ganar prioridad sobre «sucursal» o «dónde».
+    # De lo contrario «recoger en sucursal» daría solamente direcciones.
+    if tiene("asesor", "asesora", "humano", "humana", "vendedor", "vendedora", "ventas") or any(
+        s in n for s in ("hablar con alguien", "hablar con una persona", "atencion humana")
+    ):
+        return CONTACTO_VENTAS
+
+    if tiene("recoger", "recoleccion", "recogida"):
+        return (
+            "Sí, puedes recoger tu compra en una sucursal. "
+            "La disponibilidad y la sucursal de entrega deben "
+            "coordinarse con ventas. Escribe UBICACIONES para conocerlas."
+        )
+
     sucursal = _sucursal(n)
     consulta_sucursal = tiene(
         "sucursal", "sucursales", "direccion", "direcciones", "ubicacion",
